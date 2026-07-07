@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0f766e" />
+<title>監造日報提報</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; }
+  textarea, input, select { font-size: 16px; } /* 防止 iOS 自動放大 */
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {
+  useState,
+  useEffect,
+  useRef
+} = React;
+
+// ===== 預設工程清單（取自 Google Drive 14 個專案資料夾）=====
+const DEFAULT_PROJECTS = ["00.麥寮鄉十八棟排水(許厝寮段後安寮小段1627地號旁)復建工程等二件", "01.台西鄉有才寮大排旁堤岸復建工程", "02.二崙鄉新庄子大排台19線上游護岸治理工程", "03.口湖新港大排二抽水站新建治理工程(世合設計-南寧工程)", "04.雲29線三和大橋引道(南、北岸)防汛道路改善工程(1141212廣裕得標)", "05.口湖鄉椬梧滯洪池碼頭設施改善工程", "06.麥寮鄉四十棟排水(豐興段992地號旁)復建工程", "07.口湖鄉湖口村下湖口養殖區下湖口一大排四中排(下游段)排水改善工程", "08.北港鎮懷仁街排水改善工程", "09.A1-041臺西鄉火燒牛稠大排支線(臺西海埔地二號水門旁)護岸復建工程", "10.Danas-F-06-02-05-二崙鄉二崙大排(八角亭段1018地號旁)右岸復建工程", "11.四湖鄉三條崙海水浴場(三條崙段658-6地號)堤岸復建工程", "12.Danas-F-06-02-05-四湖鄉三條崙海岸保護工復建工程", "13.二崙鄉新庄子大排(新庄子段新庄子小段869地號旁)左岸復建工程"];
+const STORAGE_PROJECTS = "rt_report_projects_v1";
+const STORAGE_RECORDS = "rt_report_records_v1";
+const REMOVE_PASSWORD = "0827"; // 移除工程所需密碼
+const WEATHER_OPTIONS = ["晴", "陰", "雨", "多雲", "雷陣雨", "颱風"];
+const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
+function rocWeekday(rocY, m, d) {
+  const dt = new Date(rocY + 1911, m - 1, d);
+  if (isNaN(dt.getTime())) return "";
+  return WEEK_CN[dt.getDay()];
+}
+function parseReport(text) {
+  const result = {
+    projectName: "",
+    rocY: "",
+    rocM: "",
+    rocD: "",
+    weekday: "",
+    weatherAm: "",
+    weatherPm: "",
+    startY: "",
+    startM: "",
+    startD: "",
+    contractDays: "",
+    accumDays: "",
+    remainDays: "",
+    plannedPct: "",
+    actualPct: "",
+    workItems: "",
+    matched: {},
+    notes: []
+  };
+  if (!text) return result;
+  const t = text.replace(/\r/g, "");
+  let m;
+  m = t.match(/工程名稱[：:\s]*([^\n]+)/);
+  if (m) {
+    result.projectName = m[1].trim();
+    result.matched.projectName = true;
+  }
+
+  // 日期：限定在「日期」標題後（行首），避開工程名稱編碼與開工日期
+  m = t.match(/(?:^|\n)[^\n]*?日期[：:\s]*(\d{2,3})\s*[\/\-年]\s*(\d{1,2})\s*[\/\-月]\s*(\d{1,2})/);
+  if (m) {
+    result.rocY = m[1];
+    result.rocM = m[2];
+    result.rocD = m[3];
+    result.weekday = rocWeekday(+m[1], +m[2], +m[3]);
+    result.matched.date = true;
+  }
+  m = t.match(/上午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
+  if (m) {
+    result.weatherAm = m[1].trim();
+    result.matched.weatherAm = true;
+  }
+  m = t.match(/下午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
+  if (m) {
+    result.weatherPm = m[1].trim();
+    result.matched.weatherPm = true;
+  }
+  m = t.match(/開工日(?:期)?[：:\s]*(\d{2,3})\s*[\/\-年]\s*(\d{1,2})\s*[\/\-月]\s*(\d{1,2})/);
+  if (m) {
+    result.startY = m[1];
+    result.startM = m[2];
+    result.startD = m[3];
+    result.matched.start = true;
+  }
+  m = t.match(/契約工期[：:\s]*(\d+)/);
+  if (m) {
+    result.contractDays = m[1];
+    result.matched.contractDays = true;
+  }
+  m = t.match(/累計工期[：:\s]*(\d+)/);
+  if (m) {
+    result.accumDays = m[1];
+    result.matched.accumDays = true;
+  }
+  m = t.match(/剩餘工期[：:\s]*(\d+)/);
+  if (m) {
+    result.remainDays = m[1];
+    result.matched.remainDays = true;
+  }
+  m = t.match(/預定進度[：:\s]*([\d.]+)\s*%?/);
+  if (m) {
+    result.plannedPct = m[1];
+    result.matched.planned = true;
+  }
+  m = t.match(/實際進度[：:\s]*([\d.]+)\s*%?/);
+  if (m) {
+    result.actualPct = m[1];
+    result.matched.actual = true;
+  }
+  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|重要記事)[、，。\s]|$)/);
+  if (m) {
+    result.workItems = m[1].trim();
+    result.matched.workItems = true;
+  }
+  if (result.contractDays && result.accumDays && result.remainDays) {
+    const sum = +result.accumDays + +result.remainDays;
+    if (sum !== +result.contractDays) {
+      result.notes.push(`工期不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${sum}，但契約為 ${result.contractDays}。`);
+    }
+  }
+  return result;
+}
+function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays) {
+  if (!startY || !rocY || !contractDays) return {
+    accum: "",
+    remain: ""
+  };
+  const s = new Date(+startY + 1911, +startM - 1, +startD);
+  const c = new Date(+rocY + 1911, +rocM - 1, +rocD);
+  if (isNaN(s.getTime()) || isNaN(c.getTime())) return {
+    accum: "",
+    remain: ""
+  };
+  const diff = Math.floor((c - s) / 86400000) + 1;
+  const accum = diff > 0 ? diff : 0;
+  const remain = +contractDays - accum;
+  return {
+    accum: String(accum),
+    remain: String(remain)
+  };
+}
+function Field({
+  label,
+  children
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: styles.field
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.fieldLabel
+  }, label), children);
+}
+function App() {
+  const [projects, setProjects] = useState(DEFAULT_PROJECTS);
+  const [records, setRecords] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [tab, setTab] = useState("form");
+  const [rawText, setRawText] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [projectName, setProjectName] = useState("");
+  const [rocY, setRocY] = useState("");
+  const [rocM, setRocM] = useState("");
+  const [rocD, setRocD] = useState("");
+  const [weatherAm, setWeatherAm] = useState("");
+  const [weatherPm, setWeatherPm] = useState("");
+  const [startY, setStartY] = useState("");
+  const [startM, setStartM] = useState("");
+  const [startD, setStartD] = useState("");
+  const [contractDays, setContractDays] = useState("");
+  const [vendorAccum, setVendorAccum] = useState("");
+  const [vendorRemain, setVendorRemain] = useState("");
+  const [plannedPct, setPlannedPct] = useState("");
+  const [actualPct, setActualPct] = useState("");
+  const [workItems, setWorkItems] = useState("");
+  const [sampling, setSampling] = useState("");
+  const [samplingFound, setSamplingFound] = useState(false);
+  const [important, setImportant] = useState("");
+  const [importantFound, setImportantFound] = useState(false);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(STORAGE_PROJECTS));
+      if (Array.isArray(p) && p.length) setProjects(p);
+    } catch (e) {}
+    try {
+      const r = JSON.parse(localStorage.getItem(STORAGE_RECORDS));
+      if (Array.isArray(r)) setRecords(r);
+    } catch (e) {}
+  }, []);
+  function saveProjects(next) {
+    setProjects(next);
+    try {
+      localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(next));
+    } catch (e) {}
+  }
+  function saveRecords(next) {
+    setRecords(next);
+    try {
+      localStorage.setItem(STORAGE_RECORDS, JSON.stringify(next));
+    } catch (e) {}
+  }
+  function doParse() {
+    const r = parseReport(rawText);
+    setParsed(r);
+    if (r.matched.projectName) {
+      const hit = projects.find(p => p.includes(r.projectName) || r.projectName.includes(p.replace(/^\d+\./, "")));
+      setProjectName(hit || r.projectName);
+    }
+    if (r.matched.date) {
+      setRocY(r.rocY);
+      setRocM(r.rocM);
+      setRocD(r.rocD);
+    }
+    if (r.matched.weatherAm) setWeatherAm(r.weatherAm);
+    if (r.matched.weatherPm) setWeatherPm(r.weatherPm);
+    if (r.matched.start) {
+      setStartY(r.startY);
+      setStartM(r.startM);
+      setStartD(r.startD);
+    }
+    if (r.matched.contractDays) setContractDays(r.contractDays);
+    if (r.matched.accumDays) setVendorAccum(r.accumDays);
+    if (r.matched.remainDays) setVendorRemain(r.remainDays);
+    if (r.matched.planned) setPlannedPct(r.plannedPct);
+    if (r.matched.actual) setActualPct(r.actualPct);
+    if (r.matched.workItems) setWorkItems(r.workItems);
+    setSamplingFound(/施工取樣|取樣會驗/.test(rawText));
+    setImportantFound(/重要記事/.test(rawText));
+  }
+  const auto = computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays);
+  const accumMismatch = vendorAccum && auto.accum && vendorAccum !== auto.accum;
+  const remainMismatch = vendorRemain && auto.remain && vendorRemain !== auto.remain;
+  const wd = rocY && rocM && rocD ? rocWeekday(+rocY, +rocM, +rocD) : "";
+  function buildOutput() {
+    const useAccum = vendorAccum || auto.accum;
+    const useRemain = vendorRemain || auto.remain;
+    const lines = [];
+    lines.push(`一、工程名稱：${projectName}`);
+    lines.push(`二、日期：${rocY}/${rocM}/${rocD}(${wd})`);
+    lines.push(`三、天氣：上午/${weatherAm}、下午/${weatherPm}`);
+    lines.push(`四、本案工期：開工日${startY}/${startM}/${startD}`);
+    lines.push(`(1)契約工期：${contractDays}日曆天`);
+    lines.push(`(2)累計工期：${useAccum}日曆天`);
+    lines.push(`(3)剩餘工期：${useRemain}日曆天`);
+    lines.push(`五、工程進度`);
+    lines.push(`(1)預定進度：${plannedPct}%`);
+    lines.push(`(2)實際進度：${actualPct}%`);
+    lines.push(`六、本日工作項目`);
+    lines.push(workItems);
+    if (samplingFound) {
+      lines.push(`七、施工取樣會驗`);
+      lines.push(sampling || "無");
+    }
+    if (importantFound) {
+      lines.push(`${samplingFound ? "八" : "七"}、重要記事`);
+      lines.push(important || "無");
+    }
+    return lines.join("\n");
+  }
+  const output = projectName || rocY ? buildOutput() : "";
+  function copyText(txt) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).catch(() => fallbackCopy(txt));
+    } else {
+      fallbackCopy(txt);
+    }
+  }
+  function fallbackCopy(txt) {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand("copy");
+    } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  function handleCopy() {
+    if (!output) return;
+    copyText(output);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  function handleSaveRecord() {
+    if (!output) return;
+    const rec = {
+      id: Date.now(),
+      projectName,
+      date: `${rocY}/${rocM}/${rocD}`,
+      text: output,
+      savedAt: new Date().toLocaleString("zh-TW")
+    };
+    saveRecords([rec, ...records]);
+    alert("已保存紀錄");
+  }
+  function deleteRecord(id) {
+    setPendingDelete(id);
+  }
+  function confirmDelete() {
+    saveRecords(records.filter(r => r.id !== pendingDelete));
+    setPendingDelete(null);
+  }
+  const [newName, setNewName] = useState("");
+  const [pendingRemove, setPendingRemove] = useState(null); // 待移除的工程名稱
+  const [pendingDelete, setPendingDelete] = useState(null); // 待刪除的紀錄 id
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+  function addProject() {
+    const name = newName.trim();
+    if (!name) {
+      alert("請輸入工程名稱");
+      return;
+    }
+    if (projects.includes(name)) {
+      alert("清單已有此工程");
+      return;
+    }
+    saveProjects([...projects, name]);
+    setNewName("");
+    setShowAdd(false);
+    alert("已新增工程到清單");
+  }
+  function removeProject(name) {
+    setPendingRemove(name);
+    setPwInput("");
+    setPwError(false);
+  }
+  function confirmRemove() {
+    if (pwInput !== REMOVE_PASSWORD) {
+      setPwError(true);
+      return;
+    }
+    saveProjects(projects.filter(p => p !== pendingRemove));
+    setPendingRemove(null);
+    setPwInput("");
+    setPwError(false);
+  }
+  const yearOpts = [];
+  for (let y = 110; y <= 120; y++) yearOpts.push(y);
+  const monthOpts = Array.from({
+    length: 12
+  }, (_, i) => i + 1);
+  const dayOpts = Array.from({
+    length: 31
+  }, (_, i) => i + 1);
+  return /*#__PURE__*/React.createElement("div", {
+    style: styles.page
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.container
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.header
+  }, /*#__PURE__*/React.createElement("h1", {
+    style: styles.h1
+  }, "監造日報提報"), /*#__PURE__*/React.createElement("p", {
+    style: styles.sub
+  }, "貼上廠商日報文字，自動產生 LINE 回報內容")), /*#__PURE__*/React.createElement("div", {
+    style: styles.tabs
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.tab,
+      ...(tab === "form" ? styles.tabActive : {})
+    },
+    onClick: () => setTab("form")
+  }, "填寫"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.tab,
+      ...(tab === "history" ? styles.tabActive : {})
+    },
+    onClick: () => setTab("history")
+  }, "紀錄 (", records.length, ")")), tab === "form" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: styles.addRow
+  }, /*#__PURE__*/React.createElement("button", {
+    style: styles.addBtn,
+    onClick: () => setShowAdd(true)
+  }, "＋ 新增工程")), /*#__PURE__*/React.createElement("div", {
+    style: styles.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: styles.label
+  }, "① 貼上廠商日報文字"), /*#__PURE__*/React.createElement("textarea", {
+    style: styles.textarea,
+    rows: 8,
+    value: rawText,
+    onChange: e => setRawText(e.target.value),
+    placeholder: "一、工程名稱：...\n二、日期：115/6/24（三）\n三、天氣：上午/晴、下午/晴\n..."
+  }), /*#__PURE__*/React.createElement("button", {
+    style: styles.primaryBtn,
+    onClick: doParse
+  }, "自動解析 →")), parsed && /*#__PURE__*/React.createElement(React.Fragment, null, parsed.notes.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: styles.warnBox
+  }, parsed.notes.map((n, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "⚠ ", n))), /*#__PURE__*/React.createElement("div", {
+    style: styles.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: styles.label
+  }, "② 核對抓取結果（可手動修正）"), /*#__PURE__*/React.createElement(Field, {
+    label: "工程名稱"
+  }, /*#__PURE__*/React.createElement("select", {
+    style: styles.input,
+    value: projectName,
+    onChange: e => setProjectName(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— 請選擇 —"), projects.map(p => /*#__PURE__*/React.createElement("option", {
+    key: p,
+    value: p
+  }, p)), projectName && !projects.includes(projectName) && /*#__PURE__*/React.createElement("option", {
+    value: projectName
+  }, projectName, "（解析值）"))), /*#__PURE__*/React.createElement(Field, {
+    label: "日期（民國）"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("select", {
+    style: styles.inputSm,
+    value: rocY,
+    onChange: e => setRocY(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "年"), yearOpts.map(y => /*#__PURE__*/React.createElement("option", {
+    key: y,
+    value: y
+  }, y))), /*#__PURE__*/React.createElement("select", {
+    style: styles.inputSm,
+    value: rocM,
+    onChange: e => setRocM(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "月"), monthOpts.map(mo => /*#__PURE__*/React.createElement("option", {
+    key: mo,
+    value: mo
+  }, mo))), /*#__PURE__*/React.createElement("select", {
+    style: styles.inputSm,
+    value: rocD,
+    onChange: e => setRocD(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "日"), dayOpts.map(d => /*#__PURE__*/React.createElement("option", {
+    key: d,
+    value: d
+  }, d))), /*#__PURE__*/React.createElement("span", {
+    style: styles.wd
+  }, wd ? `（${wd}）` : ""))), /*#__PURE__*/React.createElement(Field, {
+    label: "天氣"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "上午"), /*#__PURE__*/React.createElement("select", {
+    style: styles.inputSm,
+    value: weatherAm,
+    onChange: e => setWeatherAm(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "—"), WEATHER_OPTIONS.map(w => /*#__PURE__*/React.createElement("option", {
+    key: w,
+    value: w
+  }, w))), /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "下午"), /*#__PURE__*/React.createElement("select", {
+    style: styles.inputSm,
+    value: weatherPm,
+    onChange: e => setWeatherPm(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "—"), WEATHER_OPTIONS.map(w => /*#__PURE__*/React.createElement("option", {
+    key: w,
+    value: w
+  }, w))))), /*#__PURE__*/React.createElement(Field, {
+    label: "開工日（民國）"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("input", {
+    style: styles.inputSm,
+    value: startY,
+    onChange: e => setStartY(e.target.value),
+    placeholder: "年",
+    inputMode: "numeric"
+  }), /*#__PURE__*/React.createElement("input", {
+    style: styles.inputSm,
+    value: startM,
+    onChange: e => setStartM(e.target.value),
+    placeholder: "月",
+    inputMode: "numeric"
+  }), /*#__PURE__*/React.createElement("input", {
+    style: styles.inputSm,
+    value: startD,
+    onChange: e => setStartD(e.target.value),
+    placeholder: "日",
+    inputMode: "numeric"
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "契約工期（日曆天）"
+  }, /*#__PURE__*/React.createElement("input", {
+    style: styles.input,
+    value: contractDays,
+    onChange: e => setContractDays(e.target.value),
+    inputMode: "numeric"
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "累計工期"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "廠商"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...styles.inputSm,
+      ...(accumMismatch ? styles.mismatch : {})
+    },
+    value: vendorAccum,
+    onChange: e => setVendorAccum(e.target.value),
+    inputMode: "numeric"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "自算"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      ...styles.calcVal,
+      ...(accumMismatch ? styles.mismatchText : {})
+    }
+  }, auto.accum || "—")), accumMismatch && /*#__PURE__*/React.createElement("div", {
+    style: styles.miniWarn
+  }, "⚠ 廠商與自算不一致，請確認")), /*#__PURE__*/React.createElement(Field, {
+    label: "剩餘工期"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "廠商"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...styles.inputSm,
+      ...(remainMismatch ? styles.mismatch : {})
+    },
+    value: vendorRemain,
+    onChange: e => setVendorRemain(e.target.value),
+    inputMode: "numeric"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: styles.tag
+  }, "自算"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      ...styles.calcVal,
+      ...(remainMismatch ? styles.mismatchText : {})
+    }
+  }, auto.remain || "—")), remainMismatch && /*#__PURE__*/React.createElement("div", {
+    style: styles.miniWarn
+  }, "⚠ 廠商與自算不一致，請確認")), /*#__PURE__*/React.createElement(Field, {
+    label: "預定進度 %"
+  }, /*#__PURE__*/React.createElement("input", {
+    style: styles.input,
+    value: plannedPct,
+    onChange: e => setPlannedPct(e.target.value),
+    inputMode: "decimal"
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "實際進度 %"
+  }, /*#__PURE__*/React.createElement("input", {
+    style: styles.input,
+    value: actualPct,
+    onChange: e => setActualPct(e.target.value),
+    inputMode: "decimal"
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "本日工作項目"
+  }, /*#__PURE__*/React.createElement("textarea", {
+    style: styles.textareaSm,
+    rows: 3,
+    value: workItems,
+    onChange: e => setWorkItems(e.target.value)
+  })), samplingFound && /*#__PURE__*/React.createElement(Field, {
+    label: "施工取樣會驗"
+  }, /*#__PURE__*/React.createElement("textarea", {
+    style: styles.textareaSm,
+    rows: 2,
+    value: sampling,
+    onChange: e => setSampling(e.target.value),
+    placeholder: "無"
+  })), importantFound && /*#__PURE__*/React.createElement(Field, {
+    label: "重要記事"
+  }, /*#__PURE__*/React.createElement("textarea", {
+    style: styles.textareaSm,
+    rows: 2,
+    value: important,
+    onChange: e => setImportant(e.target.value),
+    placeholder: "無"
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: styles.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: styles.label
+  }, "③ LINE 回報內容"), /*#__PURE__*/React.createElement("pre", {
+    style: styles.output
+  }, output), /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: styles.primaryBtn,
+    onClick: handleCopy
+  }, copied ? "✓ 已複製" : "複製"), /*#__PURE__*/React.createElement("button", {
+    style: styles.secondaryBtn,
+    onClick: handleSaveRecord
+  }, "保存紀錄"))))), tab === "history" && /*#__PURE__*/React.createElement("div", {
+    style: styles.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: styles.label
+  }, "歷史紀錄"), records.length === 0 && /*#__PURE__*/React.createElement("p", {
+    style: styles.empty
+  }, "尚無保存紀錄"), records.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.id,
+    style: styles.recItem
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.recHead
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: styles.recName
+  }, r.projectName || "(未命名)"), /*#__PURE__*/React.createElement("div", {
+    style: styles.recDate
+  }, r.date, "\u3000", r.savedAt)), /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: styles.miniBtn,
+    onClick: () => {
+      copyText(r.text);
+      alert("已複製");
+    }
+  }, "複製"), /*#__PURE__*/React.createElement("button", {
+    style: styles.miniDanger,
+    onClick: () => deleteRecord(r.id)
+  }, "刪除"))), /*#__PURE__*/React.createElement("pre", {
+    style: styles.recText
+  }, r.text)))), showAdd && /*#__PURE__*/React.createElement("div", {
+    style: styles.modalBg,
+    onClick: () => setShowAdd(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.modal,
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: styles.modalTitle
+  }, "新增工程到清單"), /*#__PURE__*/React.createElement("p", {
+    style: styles.modalNote
+  }, "手動輸入工程名稱。新增後永久保存於本機。"), /*#__PURE__*/React.createElement("input", {
+    style: styles.input,
+    value: newName,
+    onChange: e => setNewName(e.target.value),
+    placeholder: "例：14.XX鄉XX大排復建工程"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: styles.primaryBtn,
+    onClick: addProject
+  }, "新增"), /*#__PURE__*/React.createElement("button", {
+    style: styles.secondaryBtn,
+    onClick: () => setShowAdd(false)
+  }, "關閉")), /*#__PURE__*/React.createElement("div", {
+    style: styles.divider
+  }), /*#__PURE__*/React.createElement("label", {
+    style: styles.labelSm
+  }, "目前清單（點 ✕ 移除自訂項目）"), /*#__PURE__*/React.createElement("div", {
+    style: styles.projList
+  }, projects.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p,
+    style: styles.projRow
+  }, /*#__PURE__*/React.createElement("span", {
+    style: styles.projName
+  }, p), !DEFAULT_PROJECTS.includes(p) && /*#__PURE__*/React.createElement("button", {
+    style: styles.removeX,
+    onClick: () => removeProject(p)
+  }, "✕")))))), pendingRemove && /*#__PURE__*/React.createElement("div", {
+    style: styles.modalBg,
+    onClick: () => setPendingRemove(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.modalSm,
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: styles.modalTitle
+  }, "移除工程"), /*#__PURE__*/React.createElement("p", {
+    style: styles.modalNote
+  }, "即將移除：", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.text
+    }
+  }, pendingRemove)), /*#__PURE__*/React.createElement("label", {
+    style: styles.labelSm
+  }, "請輸入密碼以確認移除"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...styles.input,
+      ...(pwError ? styles.mismatch : {})
+    },
+    type: "password",
+    inputMode: "numeric",
+    value: pwInput,
+    onChange: e => {
+      setPwInput(e.target.value);
+      setPwError(false);
+    },
+    placeholder: "密碼"
+  }), pwError && /*#__PURE__*/React.createElement("div", {
+    style: styles.miniWarn
+  }, "⚠ 密碼錯誤"), /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.primaryBtn,
+      background: C.danger
+    },
+    onClick: confirmRemove
+  }, "確認移除"), /*#__PURE__*/React.createElement("button", {
+    style: styles.secondaryBtn,
+    onClick: () => setPendingRemove(null)
+  }, "取消")))), pendingDelete && /*#__PURE__*/React.createElement("div", {
+    style: styles.modalBg,
+    onClick: () => setPendingDelete(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.modalSm,
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: styles.modalTitle
+  }, "刪除紀錄"), /*#__PURE__*/React.createElement("p", {
+    style: styles.modalNote
+  }, "確定要刪除這筆紀錄嗎？此動作無法復原。"), /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.primaryBtn,
+      background: C.danger
+    },
+    onClick: confirmDelete
+  }, "確認刪除"), /*#__PURE__*/React.createElement("button", {
+    style: styles.secondaryBtn,
+    onClick: () => setPendingDelete(null)
+  }, "取消"))))));
+}
+const C = {
+  bg: "#f1f5f9",
+  card: "#ffffff",
+  border: "#e2e8f0",
+  text: "#1e293b",
+  sub: "#64748b",
+  primary: "#0f766e",
+  danger: "#dc2626",
+  warn: "#b45309",
+  warnBg: "#fef3c7",
+  red: "#dc2626",
+  redBg: "#fee2e2"
+};
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: C.bg,
+    padding: "12px",
+    fontFamily: "system-ui, -apple-system, 'Microsoft JhengHei', sans-serif",
+    color: C.text
+  },
+  container: {
+    maxWidth: 520,
+    margin: "0 auto"
+  },
+  header: {
+    textAlign: "center",
+    padding: "16px 8px 12px",
+    cursor: "default",
+    userSelect: "none",
+    WebkitUserSelect: "none"
+  },
+  h1: {
+    fontSize: 22,
+    fontWeight: 800,
+    margin: 0,
+    color: C.primary
+  },
+  sub: {
+    fontSize: 13,
+    color: C.sub,
+    margin: "4px 0 0"
+  },
+  tabs: {
+    display: "flex",
+    gap: 6,
+    marginBottom: 12
+  },
+  tab: {
+    flex: 1,
+    padding: "10px",
+    border: `1px solid ${C.border}`,
+    background: C.card,
+    borderRadius: 10,
+    fontSize: 15,
+    fontWeight: 600,
+    color: C.sub,
+    cursor: "pointer"
+  },
+  tabActive: {
+    background: C.primary,
+    color: "#fff",
+    borderColor: C.primary
+  },
+  card: {
+    background: C.card,
+    border: `1px solid ${C.border}`,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12
+  },
+  label: {
+    display: "block",
+    fontSize: 14,
+    fontWeight: 700,
+    marginBottom: 8,
+    color: C.text
+  },
+  labelSm: {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 600,
+    margin: "8px 0",
+    color: C.sub
+  },
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: 10,
+    fontFamily: "inherit",
+    resize: "vertical",
+    lineHeight: 1.6
+  },
+  textareaSm: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: 8,
+    fontFamily: "inherit",
+    resize: "vertical",
+    lineHeight: 1.5
+  },
+  primaryBtn: {
+    flex: 1,
+    marginTop: 10,
+    padding: "11px 16px",
+    background: C.primary,
+    color: "#fff",
+    border: "none",
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: "pointer"
+  },
+  secondaryBtn: {
+    flex: 1,
+    marginTop: 10,
+    padding: "11px 16px",
+    background: "#fff",
+    color: C.primary,
+    border: `1px solid ${C.primary}`,
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: "pointer"
+  },
+  field: {
+    marginBottom: 12
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: C.sub,
+    marginBottom: 5
+  },
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: "9px 10px",
+    fontFamily: "inherit"
+  },
+  inputSm: {
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: "9px 8px",
+    fontFamily: "inherit",
+    width: 70,
+    boxSizing: "border-box"
+  },
+  row: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    flexWrap: "wrap"
+  },
+  tag: {
+    fontSize: 12,
+    color: C.sub,
+    fontWeight: 600
+  },
+  wd: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: C.primary
+  },
+  calcVal: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: C.text,
+    minWidth: 40
+  },
+  mismatch: {
+    border: `2px solid ${C.red}`,
+    background: C.redBg
+  },
+  mismatchText: {
+    color: C.red
+  },
+  miniWarn: {
+    fontSize: 12,
+    color: C.red,
+    marginTop: 4,
+    fontWeight: 600
+  },
+  warnBox: {
+    background: C.warnBg,
+    border: `1px solid ${C.warn}`,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 13,
+    color: C.warn,
+    fontWeight: 600
+  },
+  output: {
+    background: "#f8fafc",
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    fontFamily: "inherit",
+    lineHeight: 1.7,
+    margin: 0
+  },
+  empty: {
+    color: C.sub,
+    fontSize: 14,
+    textAlign: "center",
+    padding: 20
+  },
+  recItem: {
+    border: `1px solid ${C.border}`,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10
+  },
+  recHead: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 8
+  },
+  recName: {
+    fontSize: 14,
+    fontWeight: 700
+  },
+  recDate: {
+    fontSize: 12,
+    color: C.sub,
+    marginTop: 2
+  },
+  recText: {
+    background: "#f8fafc",
+    borderRadius: 6,
+    padding: 8,
+    fontSize: 12,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    fontFamily: "inherit",
+    lineHeight: 1.5,
+    margin: "8px 0 0",
+    maxHeight: 120,
+    overflow: "auto"
+  },
+  miniBtn: {
+    padding: "5px 12px",
+    background: C.primary,
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer"
+  },
+  miniDanger: {
+    padding: "5px 12px",
+    background: "#fff",
+    color: C.danger,
+    border: `1px solid ${C.danger}`,
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer"
+  },
+  modalBg: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 100
+  },
+  modal: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 18,
+    maxWidth: 460,
+    width: "100%",
+    maxHeight: "85vh",
+    overflow: "auto"
+  },
+  modalSm: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 18,
+    maxWidth: 360,
+    width: "100%"
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    margin: "0 0 6px"
+  },
+  modalNote: {
+    fontSize: 13,
+    color: C.sub,
+    margin: "0 0 12px"
+  },
+  divider: {
+    height: 1,
+    background: C.border,
+    margin: "16px 0"
+  },
+  projList: {
+    maxHeight: 200,
+    overflow: "auto"
+  },
+  projRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 0",
+    borderBottom: `1px solid ${C.border}`
+  },
+  projName: {
+    fontSize: 12,
+    color: C.text,
+    lineHeight: 1.4
+  },
+  removeX: {
+    background: C.redBg,
+    color: C.danger,
+    border: "none",
+    borderRadius: 6,
+    width: 26,
+    height: 26,
+    fontSize: 14,
+    cursor: "pointer",
+    flexShrink: 0
+  },
+  addRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: 10
+  },
+  addBtn: {
+    padding: "9px 16px",
+    background: "#fff",
+    color: C.primary,
+    border: `1.5px solid ${C.primary}`,
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer"
+  }
+};
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+</script>
+</body>
+</html>
