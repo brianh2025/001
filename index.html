@@ -51,6 +51,7 @@ function parseReport(text) {
     contractDays: "",
     accumDays: "",
     remainDays: "",
+    excludeDays: "",
     plannedPct: "",
     actualPct: "",
     workItems: "",
@@ -107,6 +108,12 @@ function parseReport(text) {
     result.remainDays = m[1];
     result.matched.remainDays = true;
   }
+  // 不計工期天數：支援「不計工期共5天」「不計工期：5」「不計天數 5」等寫法
+  m = t.match(/不計(?:工期|天數|日數)[^\d\n]*(\d+)/);
+  if (m) {
+    result.excludeDays = m[1];
+    result.matched.excludeDays = true;
+  }
   m = t.match(/預定進度[：:\s]*([\d.]+)\s*%?/);
   if (m) {
     result.plannedPct = m[1];
@@ -117,7 +124,7 @@ function parseReport(text) {
     result.actualPct = m[1];
     result.matched.actual = true;
   }
-  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|重要記事)[、，。\s]|$)/);
+  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|取樣會驗|重要記事|查驗項目)[、，。:：\s]|$)/);
   if (m) {
     result.workItems = m[1].trim();
     result.matched.workItems = true;
@@ -130,23 +137,38 @@ function parseReport(text) {
   }
   return result;
 }
-function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays) {
+function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, mode) {
   if (!startY || !rocY || !contractDays) return {
     accum: "",
-    remain: ""
+    remain: "",
+    effContract: ""
   };
   const s = new Date(+startY + 1911, +startM - 1, +startD);
   const c = new Date(+rocY + 1911, +rocM - 1, +rocD);
   if (isNaN(s.getTime()) || isNaN(c.getTime())) return {
     accum: "",
-    remain: ""
+    remain: "",
+    effContract: ""
   };
-  const diff = Math.floor((c - s) / 86400000) + 1;
-  const accum = diff > 0 ? diff : 0;
-  const remain = +contractDays - accum;
+  const rawDiff = Math.floor((c - s) / 86400000) + 1; // 含開工日
+  const ex = +(excludeDays || 0);
+  const cd = +contractDays;
+  if (mode === "extend") {
+    // 模式2 總工期延長：累計照算，契約工期加上不計天數
+    const accum = rawDiff > 0 ? rawDiff : 0;
+    const effContract = cd + ex;
+    return {
+      accum: String(accum),
+      remain: String(effContract - accum),
+      effContract: String(effContract)
+    };
+  }
+  // 模式1 限期完工：累計扣掉不計天數，契約工期不變
+  const accum = Math.max(rawDiff - ex, 0);
   return {
     accum: String(accum),
-    remain: String(remain)
+    remain: String(cd - accum),
+    effContract: String(cd)
   };
 }
 function Field({
@@ -178,6 +200,8 @@ function App() {
   const [contractDays, setContractDays] = useState("");
   const [vendorAccum, setVendorAccum] = useState("");
   const [vendorRemain, setVendorRemain] = useState("");
+  const [excludeDays, setExcludeDays] = useState("");
+  const [durationMode, setDurationMode] = useState("fixed"); // fixed=限期完工, extend=總工期延長
   const [plannedPct, setPlannedPct] = useState("");
   const [actualPct, setActualPct] = useState("");
   const [workItems, setWorkItems] = useState("");
@@ -230,27 +254,36 @@ function App() {
     if (r.matched.contractDays) setContractDays(r.contractDays);
     if (r.matched.accumDays) setVendorAccum(r.accumDays);
     if (r.matched.remainDays) setVendorRemain(r.remainDays);
+    if (r.matched.excludeDays) setExcludeDays(r.excludeDays);
     if (r.matched.planned) setPlannedPct(r.plannedPct);
     if (r.matched.actual) setActualPct(r.actualPct);
     if (r.matched.workItems) setWorkItems(r.workItems);
     setSamplingFound(/施工取樣|取樣會驗/.test(rawText));
     setImportantFound(/重要記事/.test(rawText));
   }
-  const auto = computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays);
+  const auto = computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode);
   const accumMismatch = vendorAccum && auto.accum && vendorAccum !== auto.accum;
   const remainMismatch = vendorRemain && auto.remain && vendorRemain !== auto.remain;
   const wd = rocY && rocM && rocD ? rocWeekday(+rocY, +rocM, +rocD) : "";
   function buildOutput() {
-    const useAccum = vendorAccum || auto.accum;
-    const useRemain = vendorRemain || auto.remain;
+    // 以自算值為準（不計天數與模式會影響輸出）；自算不可得時退回廠商值
+    const useAccum = auto.accum || vendorAccum;
+    const useRemain = auto.remain || vendorRemain;
+    const useContract = auto.effContract || contractDays;
+    // 工程名稱：只刪開頭的「數字+點」編號，其餘完整保留
+    const cleanName = String(projectName).replace(/^\s*\d+\.\s*/, "").trim();
+    const ex = +(excludeDays || 0);
     const lines = [];
-    lines.push(`一、工程名稱：${projectName}`);
+    lines.push(`一、工程名稱：${cleanName}`);
     lines.push(`二、日期：${rocY}/${rocM}/${rocD}(${wd})`);
     lines.push(`三、天氣：上午/${weatherAm}、下午/${weatherPm}`);
     lines.push(`四、本案工期：開工日${startY}/${startM}/${startD}`);
-    lines.push(`(1)契約工期：${contractDays}日曆天`);
+    lines.push(`(1)契約工期：${useContract}日曆天`);
     lines.push(`(2)累計工期：${useAccum}日曆天`);
     lines.push(`(3)剩餘工期：${useRemain}日曆天`);
+    if (ex > 0) {
+      lines.push(`(4)不計工期：${ex}日曆天`);
+    }
     lines.push(`五、工程進度`);
     lines.push(`(1)預定進度：${plannedPct}%`);
     lines.push(`(2)實際進度：${actualPct}%`);
@@ -507,6 +540,32 @@ function App() {
     onChange: e => setContractDays(e.target.value),
     inputMode: "numeric"
   })), /*#__PURE__*/React.createElement(Field, {
+    label: "不計工期天數"
+  }, /*#__PURE__*/React.createElement("input", {
+    style: styles.input,
+    value: excludeDays,
+    onChange: e => setExcludeDays(e.target.value),
+    inputMode: "numeric",
+    placeholder: "無則留空或填 0"
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "工期計算模式"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.row
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.modeBtn,
+      ...(durationMode === "fixed" ? styles.modeBtnActive : {})
+    },
+    onClick: () => setDurationMode("fixed")
+  }, "限期完工"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.modeBtn,
+      ...(durationMode === "extend" ? styles.modeBtnActive : {})
+    },
+    onClick: () => setDurationMode("extend")
+  }, "總工期延長")), /*#__PURE__*/React.createElement("div", {
+    style: styles.modeHint
+  }, durationMode === "fixed" ? "累計工期扣掉不計天數，契約工期不變" : "累計工期照算，契約工期加上不計天數")), /*#__PURE__*/React.createElement(Field, {
     label: "累計工期"
   }, /*#__PURE__*/React.createElement("div", {
     style: styles.row
@@ -1087,6 +1146,27 @@ const styles = {
     fontSize: 14,
     fontWeight: 700,
     cursor: "pointer"
+  },
+  modeBtn: {
+    flex: 1,
+    padding: "9px 12px",
+    background: "#fff",
+    color: C.sub,
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer"
+  },
+  modeBtnActive: {
+    background: C.primary,
+    color: "#fff",
+    borderColor: C.primary
+  },
+  modeHint: {
+    fontSize: 12,
+    color: C.sub,
+    marginTop: 6
   }
 };
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
