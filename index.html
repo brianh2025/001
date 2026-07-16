@@ -4,35 +4,116 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#0f766e" />
-<title>監造日報提報</title>
+<title>監造日報提報智慧助手</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
+<!-- 載入 React 18 & ReactDOM -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<!-- 載入 Babel 用於解析 JSX -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
+<!-- 載入 Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          brand: {
+            50: '#f0fdfa',
+            100: '#ccfbf1',
+            500: '#14b8a6',
+            600: '#0d9488',
+            700: '#0f766e',
+            800: '#115e59',
+            900: '#134e4a',
+          }
+        }
+      }
+    }
+  }
+</script>
 <style>
   * { -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; }
-  textarea, input, select { font-size: 16px; } /* 防止 iOS 自動放大 */
+  body { 
+    margin: 0; 
+    font-family: system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', 'Microsoft JhengHei', sans-serif;
+  }
+  textarea, input, select { font-size: 16px !important; } /* 避免 iOS 自動聚焦放大 */
+  
+  /* 滾動條樣式優化 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
 <div id="root"></div>
-<script>
-const {
-  useState,
-  useEffect,
-  useRef
-} = React;
 
-// ===== 預設工程清單（取自 Google Drive 14 個專案資料夾）=====
-const DEFAULT_PROJECTS = ["00.麥寮鄉十八棟排水(許厝寮段後安寮小段1627地號旁)復建工程等二件", "01.台西鄉有才寮大排旁堤岸復建工程", "02.二崙鄉新庄子大排台19線上游護岸治理工程", "03.口湖新港大排二抽水站新建治理工程", "04.雲29線三和大橋引道(南、北岸)防汛道路改善工程", "05.口湖鄉椬梧滯洪池碼頭設施改善工程", "06.麥寮鄉四十棟排水(豐興段992地號旁)復建工程", "07.口湖鄉湖口村下湖口養殖區下湖口一大排四中排(下游段)排水改善工程", "08.北港鎮懷仁街排水改善工程", "09.A1-041臺西鄉火燒牛稠大排支線(臺西海埔地二號水門旁)護岸復建工程", "10.Danas-F-06-02-05-二崙鄉二崙大排(八角亭段1018地號旁)右岸復建工程", "11.四湖鄉三條崙海水浴場(三條崙段658-6地號)堤岸復建工程", "12.Danas-F-06-02-05-四湖鄉三條崙海岸保護工復建工程", "13.二崙鄉新庄子大排(新庄子段新庄子小段869地號旁)左岸復建工程"];
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ===== 預設工程清單 =====
+const DEFAULT_PROJECTS = [
+  "00.麥寮鄉十八棟排水(許厝寮段後安寮小段1627地號旁)復建工程等二件",
+  "01.台西鄉有才寮大排旁堤岸復建工程",
+  "02.二崙鄉新庄子大排台19線上游護岸治理工程",
+  "03.口湖新港大排二抽水站新建治理工程",
+  "04.雲29線三和大橋引道(南、北岸)防汛道路改善工程",
+  "05.口湖鄉椬梧滯洪池碼頭設施改善工程",
+  "06.麥寮鄉四十棟排水(豐興段992地號旁)復建工程",
+  "07.口湖鄉湖口村下湖口養殖區下湖口一大排四中排(下游段)排水改善工程",
+  "08.北港鎮懷仁街排水改善工程",
+  "09.A1-041臺西鄉火燒牛稠大排支線(臺西海埔地二號水門旁)護岸復建工程",
+  "10.Danas-F-06-02-05-二崙鄉二崙大排(八角亭段1018地號旁)右岸復建工程",
+  "11.四湖鄉三條崙海水浴場(三條崙段658-6地號)堤岸復建工程",
+  "12.Danas-F-06-02-05-四湖鄉三條崙海岸保護工復建工程",
+  "13.二崙鄉新庄子大排(新庄子段新庄子小段869地號旁)左岸復建工程"
+];
+
 const STORAGE_PROJECTS = "rt_report_projects_v1";
 const STORAGE_RECORDS = "rt_report_records_v1";
-const REMOVE_PASSWORD = "0827"; // 移除工程所需密碼
-const WEATHER_OPTIONS = ["晴", "陰", "雨", "多雲", "雷陣雨", "颱風"];
+const REMOVE_PASSWORD = "0827"; // 移除預設工程密碼
+const WEATHER_OPTIONS = ["晴", "多雲", "陰", "雨", "雷陣雨", "颱風"];
 const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
+
+// 測試範本文字，供使用者一鍵填入測試
+const TEST_TEMPLATE = `工程名稱：10.Danas-F-06-02-05-二崙鄉二崙大排(八角亭段1018地號旁)右岸復建工程
+日期：115/07/16
+天氣：上午：晴、下午：雷陣雨
+開工日期：115/03/01
+契約工期：180天
+累計工期：138天
+剩餘工期：42天
+不計工期共 5.5 天
+預定進度：78.5%
+實際進度：80.2%
+本日工作項目：
+1. 護岸混凝土澆置 120米
+2. 頂版範本組立 15組
+3. 現場清理與安全圍籬維護
+
+施工取樣：
+1. 混凝土抗壓強度試體取樣 3組 (28天)
+
+重要記事：
+下午遭遇突發大雷雨，自14:30起暫停戶外混凝土澆置作業，並做好防雨帆布遮蓋。`;
+
 function rocWeekday(rocY, m, d) {
-  const dt = new Date(rocY + 1911, m - 1, d);
+  const dt = new Date(parseInt(rocY) + 1911, parseInt(m) - 1, parseInt(d));
   if (isNaN(dt.getTime())) return "";
   return WEEK_CN[dt.getDay()];
 }
@@ -62,19 +143,23 @@ function parseReport(text) {
     plannedPct: "",
     actualPct: "",
     workItems: "",
+    sampling: "",
+    important: "",
     matched: {},
     notes: []
   };
   if (!text) return result;
   const t = text.replace(/\r/g, "");
   let m;
+
+  // 1. 工程名稱
   m = t.match(/工程名稱[：:\s]*([^\n]+)/);
   if (m) {
     result.projectName = m[1].trim();
     result.matched.projectName = true;
   }
 
-  // 日期：限定在「日期」標題後（行首），避開工程名稱編碼與開工日期
+  // 2. 報表日期（避免抓到開工日，加上首行或非開工開頭限制）
   m = t.match(/(?:^|\n)[^\n]*?日期[：:\s]*(\d{2,3})\s*[\/\-年]\s*(\d{1,2})\s*[\/\-月]\s*(\d{1,2})/);
   if (m) {
     result.rocY = m[1];
@@ -83,16 +168,35 @@ function parseReport(text) {
     result.weekday = rocWeekday(+m[1], +m[2], +m[3]);
     result.matched.date = true;
   }
+
+  // 3. 天氣 (上下游、上下午)
   m = t.match(/上午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
   if (m) {
     result.weatherAm = m[1].trim();
     result.matched.weatherAm = true;
+  } else {
+    // 嘗試抓取「天氣：上午[晴]、下午[多雲]」格式
+    const mAlt = t.match(/天氣[：:\s]*上午[：:\s]*([\u4e00-\u9fa5]+)/);
+    if (mAlt) {
+      result.weatherAm = mAlt[1].trim();
+      result.matched.weatherAm = true;
+    }
   }
+
   m = t.match(/下午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
   if (m) {
     result.weatherPm = m[1].trim();
     result.matched.weatherPm = true;
+  } else {
+    const mAlt = t.match(/下午[：:\s]*([\u4e00-\u9fa5]+)/);
+    // 確保不是別的段落
+    if (mAlt && !t.match(/下午[：:\s]*([\u4e00-\u9fa5]+)/)?.[0].includes("日期")) {
+      result.weatherPm = mAlt[1].trim();
+      result.matched.weatherPm = true;
+    }
   }
+
+  // 4. 開工日期
   m = t.match(/開工日(?:期)?[：:\s]*(\d{2,3})\s*[\/\-年]\s*(\d{1,2})\s*[\/\-月]\s*(\d{1,2})/);
   if (m) {
     result.startY = m[1];
@@ -100,6 +204,8 @@ function parseReport(text) {
     result.startD = m[3];
     result.matched.start = true;
   }
+
+  // 5. 各種工期
   m = t.match(/契約工期[：:\s]*(\d+(\.\d+)?)/);
   if (m) {
     result.contractDays = m[1];
@@ -115,12 +221,15 @@ function parseReport(text) {
     result.remainDays = m[1];
     result.matched.remainDays = true;
   }
-  // 不計工期天數：支援「不計工期共5.5天」「不計工期：0.5」「不計天數 5」等寫法
+
+  // 6. 不計工期
   m = t.match(/不計(?:工期|天數|日數)[^\d\n]*(\d+(\.\d+)?)/);
   if (m) {
     result.excludeDays = m[1];
     result.matched.excludeDays = true;
   }
+
+  // 7. 進度
   m = t.match(/預定進度[：:\s]*([\d.]+)\s*%?/);
   if (m) {
     result.plannedPct = m[1];
@@ -131,37 +240,50 @@ function parseReport(text) {
     result.actualPct = m[1];
     result.matched.actual = true;
   }
-  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|取樣會驗|重要記事|查驗項目)[、，。:：\s]|$)/);
+
+  // 8. 本日工作項目 (抓取到下個主要標題前)
+  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|取樣會驗|重要記事|查驗項目|施工監造工作內容)[、，。:：\s]|$)/);
   if (m) {
     result.workItems = m[1].trim();
     result.matched.workItems = true;
   }
+
+  // 9. 施工取樣
+  m = t.match(/(?:施工取樣|取樣會驗)[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:八|九|重要記事|查驗項目)[、，。:：\s]|$)/);
+  if (m) {
+    result.sampling = m[1].trim();
+  }
+
+  // 10. 重要記事
+  m = t.match(/重要記事[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:九|十|查驗項目)[、，。:：\s]|$)/);
+  if (m) {
+    result.important = m[1].trim();
+  }
+
+  // 工期邏輯初檢
   if (result.contractDays && result.accumDays && result.remainDays) {
-    const sum = +result.accumDays + +result.remainDays;
-    if (Math.abs(sum - +result.contractDays) > 0.01) {
-      result.notes.push(`工期不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${formatDays(sum)}，但契約為 ${result.contractDays}。`);
+    const sum = parseFloat(result.accumDays) + parseFloat(result.remainDays);
+    if (Math.abs(sum - parseFloat(result.contractDays)) > 0.01) {
+      result.notes.push(`廠商填報數據檢算不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${formatDays(sum)}天，與契約工期(${result.contractDays}天)不合。`);
     }
   }
   return result;
 }
+
 function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, mode) {
-  if (!startY || !rocY || !contractDays) return {
-    accum: "",
-    remain: "",
-    effContract: ""
-  };
-  const s = new Date(+startY + 1911, +startM - 1, +startD);
-  const c = new Date(+rocY + 1911, +rocM - 1, +rocD);
-  if (isNaN(s.getTime()) || isNaN(c.getTime())) return {
-    accum: "",
-    remain: "",
-    effContract: ""
-  };
-  const rawDiff = Math.floor((c - s) / 86400000) + 1; // 含開工日
+  if (!startY || !rocY || !contractDays) return { accum: "", remain: "", effContract: "" };
+  
+  const s = new Date(parseInt(startY) + 1911, parseInt(startM) - 1, parseInt(startD));
+  const c = new Date(parseInt(rocY) + 1911, parseInt(rocM) - 1, parseInt(rocD));
+  
+  if (isNaN(s.getTime()) || isNaN(c.getTime())) return { accum: "", remain: "", effContract: "" };
+  
+  const rawDiff = Math.floor((c - s) / 86400000) + 1; // 包含開工當日
   const ex = parseFloat(excludeDays || 0);
   const cd = parseFloat(contractDays);
+  
   if (mode === "extend") {
-    // 模式2 總工期延長：累計照算，契約工期加上不計天數
+    // 總工期延長模式：累計天數照常照算，契約工期延長
     const accum = rawDiff > 0 ? rawDiff : 0;
     const effContract = cd + ex;
     return {
@@ -170,7 +292,7 @@ function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, exc
       effContract: formatDays(effContract)
     };
   }
-  // 模式1 限期完工：累計扣掉不計天數，契約工期不變
+  // 限期完工模式：契約不變，累計扣除不計天數
   const accum = Math.max(rawDiff - ex, 0);
   return {
     accum: formatDays(accum),
@@ -178,29 +300,22 @@ function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, exc
     effContract: formatDays(cd)
   };
 }
-function Field({
-  label,
-  children
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: styles.field
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.fieldLabel
-  }, label), children);
-}
+
 function App() {
   const [projects, setProjects] = useState(DEFAULT_PROJECTS);
   const [records, setRecords] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [tab, setTab] = useState("form");
+  const [tab, setTab] = useState("form"); // "form" | "history" | "config"
   const [rawText, setRawText] = useState("");
   const [parsed, setParsed] = useState(null);
+  
+  // 表單核心狀態
   const [projectName, setProjectName] = useState("");
   const [rocY, setRocY] = useState("");
   const [rocM, setRocM] = useState("");
   const [rocD, setRocD] = useState("");
-  const [weatherAm, setWeatherAm] = useState("");
-  const [weatherPm, setWeatherPm] = useState("");
+  const [weatherAm, setWeatherAm] = useState("晴");
+  const [weatherPm, setWeatherPm] = useState("晴");
   const [startY, setStartY] = useState("");
   const [startM, setStartM] = useState("");
   const [startD, setStartD] = useState("");
@@ -212,11 +327,20 @@ function App() {
   const [plannedPct, setPlannedPct] = useState("");
   const [actualPct, setActualPct] = useState("");
   const [workItems, setWorkItems] = useState("");
+  
+  // 新增/選填欄位
   const [sampling, setSampling] = useState("");
   const [samplingFound, setSamplingFound] = useState(false);
   const [important, setImportant] = useState("");
   const [importantFound, setImportantFound] = useState(false);
+  
+  // UI 輔助狀態
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedHistoryProj, setSelectedHistoryProj] = useState("all");
+  const [historyOrder, setHistoryOrder] = useState("desc");
+
+  // 初始化與本地儲存載入
   useEffect(() => {
     try {
       const p = JSON.parse(localStorage.getItem(STORAGE_PROJECTS));
@@ -227,62 +351,135 @@ function App() {
       if (Array.isArray(r)) setRecords(r);
     } catch (e) {}
   }, []);
-  function saveProjects(next) {
+
+  const saveProjects = (next) => {
     setProjects(next);
     try {
       localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(next));
     } catch (e) {}
-  }
-  function saveRecords(next) {
+  };
+
+  const saveRecords = (next) => {
     setRecords(next);
     try {
       localStorage.setItem(STORAGE_RECORDS, JSON.stringify(next));
     } catch (e) {}
-  }
-  function doParse() {
-    const r = parseReport(rawText);
+  };
+
+  // 載入預設範本
+  const loadTemplate = () => {
+    setRawText(TEST_TEMPLATE);
+    setTimeout(() => {
+      const parsedRes = parseReport(TEST_TEMPLATE);
+      applyParsedResults(parsedRes);
+    }, 100);
+  };
+
+  // 將解析出來的資料，套用到表單 state
+  const applyParsedResults = (r) => {
     setParsed(r);
     if (r.matched.projectName) {
-      const hit = projects.find(p => p.includes(r.projectName) || r.projectName.includes(p.replace(/^\d+\./, "")));
+      // 尋找清單中是否有類似名稱的工程
+      const hit = projects.find(p => 
+        p.includes(r.projectName) || 
+        r.projectName.includes(p.replace(/^\d+\./, ""))
+      );
       setProjectName(hit || r.projectName);
+    } else {
+      setProjectName("");
     }
+    
     if (r.matched.date) {
       setRocY(r.rocY);
-      setRocM(r.rocM);
-      setRocD(r.rocD);
+      setRocM(parseInt(r.rocM).toString());
+      setRocD(parseInt(r.rocD).toString());
+    } else {
+      setRocY(""); setRocM(""); setRocD("");
     }
-    if (r.matched.weatherAm) setWeatherAm(r.weatherAm);
-    if (r.matched.weatherPm) setWeatherPm(r.weatherPm);
+
+    setWeatherAm(r.weatherAm && WEATHER_OPTIONS.includes(r.weatherAm) ? r.weatherAm : "晴");
+    setWeatherPm(r.weatherPm && WEATHER_OPTIONS.includes(r.weatherPm) ? r.weatherPm : "晴");
+
     if (r.matched.start) {
       setStartY(r.startY);
-      setStartM(r.startM);
-      setStartD(r.startD);
+      setStartM(parseInt(r.startM).toString());
+      setStartD(parseInt(r.startD).toString());
+    } else {
+      setStartY(""); setStartM(""); setStartD("");
     }
-    if (r.matched.contractDays) setContractDays(r.contractDays);
-    if (r.matched.accumDays) setVendorAccum(r.accumDays);
-    if (r.matched.remainDays) setVendorRemain(r.remainDays);
-    if (r.matched.excludeDays) setExcludeDays(r.excludeDays);
-    if (r.matched.planned) setPlannedPct(r.plannedPct);
-    if (r.matched.actual) setActualPct(r.actualPct);
-    if (r.matched.workItems) setWorkItems(r.workItems);
-    setSamplingFound(/施工取樣|取樣會驗/.test(rawText));
-    setImportantFound(/重要記事/.test(rawText));
-  }
-  const auto = computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode);
-  
-  // 比較廠商與自算值時，先轉成 Float 比較避免格式字串不一致的問題
-  const accumMismatch = vendorAccum && auto.accum && parseFloat(vendorAccum) !== parseFloat(auto.accum);
-  const remainMismatch = vendorRemain && auto.remain && parseFloat(vendorRemain) !== parseFloat(auto.remain);
-  
-  const wd = rocY && rocM && rocD ? rocWeekday(+rocY, +rocM, +rocD) : "";
-  function buildOutput() {
-    // 以自算值為準（不計天數與模式會影響輸出）；自算不可得時退回廠商值
+
+    setContractDays(r.contractDays || "");
+    setVendorAccum(r.accumDays || "");
+    setVendorRemain(r.remainDays || "");
+    setExcludeDays(r.excludeDays || "");
+    setPlannedPct(r.plannedPct || "");
+    setActualPct(r.actualPct || "");
+    setWorkItems(r.workItems || "");
+    
+    // 如果有施工取樣或重要記事
+    if (r.sampling) {
+      setSampling(r.sampling);
+      setSamplingFound(true);
+    } else {
+      setSampling("");
+      setSamplingFound(/施工取樣|取樣會驗/.test(rawText));
+    }
+
+    if (r.important) {
+      setImportant(r.important);
+      setImportantFound(true);
+    } else {
+      setImportant("");
+      setImportantFound(/重要記事/.test(rawText));
+    }
+  };
+
+  const doParse = () => {
+    if (!rawText.trim()) {
+      alert("請先貼上日報文字！");
+      return;
+    }
+    const r = parseReport(rawText);
+    applyParsedResults(r);
+  };
+
+  // 執行自算
+  const auto = useMemo(() => {
+    return computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode);
+  }, [startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode]);
+
+  // 比對廠商值與自算值是否產生不一致
+  const accumMismatch = useMemo(() => {
+    return vendorAccum && auto.accum && parseFloat(vendorAccum) !== parseFloat(auto.accum);
+  }, [vendorAccum, auto.accum]);
+
+  const remainMismatch = useMemo(() => {
+    return vendorRemain && auto.remain && parseFloat(vendorRemain) !== parseFloat(auto.remain);
+  }, [vendorRemain, auto.remain]);
+
+  const wd = useMemo(() => {
+    if (rocY && rocM && rocD) {
+      return rocWeekday(parseInt(rocY), parseInt(rocM), parseInt(rocD));
+    }
+    return "";
+  }, [rocY, rocM, rocD]);
+
+  // 一鍵修復：將廠商申報數值同步為系統自算數值
+  const applyAutoValues = () => {
+    if (auto.accum) setVendorAccum(auto.accum);
+    if (auto.remain) setVendorRemain(auto.remain);
+  };
+
+  // 組合 LINE 輸出字串
+  const buildOutput = () => {
     const useAccum = auto.accum || vendorAccum;
     const useRemain = auto.remain || vendorRemain;
     const useContract = auto.effContract || contractDays;
-    // 工程名稱：只刪開頭的「數字+點」編號，其餘完整保留
+    
+    // 移除開頭數字點與空白
     const cleanName = String(projectName).replace(/^\s*\d+\.\s*/, "").trim();
     const ex = parseFloat(excludeDays || 0);
+    
     const lines = [];
     lines.push(`一、工程名稱：${cleanName}`);
     lines.push(`二、日期：${rocY}/${rocM}/${rocD}(${wd})`);
@@ -298,9 +495,9 @@ function App() {
     lines.push(`(1)預定進度：${plannedPct}%`);
     lines.push(`(2)實際進度：${actualPct}%`);
     lines.push(`六、本日工作項目`);
-    lines.push(workItems);
+    lines.push(workItems || "無");
 
-    // 檢查施工取樣與重要記事內容是否有效（非空且不為"無"）
+    // 判斷選填項目
     const cleanSampling = (sampling || "").trim();
     const hasSampling = samplingFound && cleanSampling !== "" && cleanSampling !== "無";
 
@@ -320,16 +517,24 @@ function App() {
     }
 
     return lines.join("\n");
-  }
-  const output = projectName || rocY ? buildOutput() : "";
-  function copyText(txt) {
+  };
+
+  const output = useMemo(() => {
+    return projectName || rocY ? buildOutput() : "";
+  }, [projectName, rocY, rocM, rocD, wd, weatherAm, weatherPm, startY, startM, startD, contractDays, excludeDays, durationMode, vendorAccum, vendorRemain, auto, plannedPct, actualPct, workItems, sampling, samplingFound, important, importantFound]);
+
+  // 複製文字功能
+  const copyText = (txt) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt).catch(() => fallbackCopy(txt));
+      navigator.clipboard.writeText(txt).then(() => {
+        showCopyToast();
+      }).catch(() => fallbackCopy(txt));
     } else {
       fallbackCopy(txt);
     }
-  }
-  function fallbackCopy(txt) {
+  };
+
+  const fallbackCopy = (txt) => {
     const ta = document.createElement("textarea");
     ta.value = txt;
     ta.style.position = "fixed";
@@ -339,60 +544,77 @@ function App() {
     ta.select();
     try {
       document.execCommand("copy");
-    } catch (e) {}
+      showCopyToast();
+    } catch (e) {
+      alert("複製失敗，請手動全選複製");
+    }
     document.body.removeChild(ta);
-  }
-  function handleCopy() {
-    if (!output) return;
-    copyText(output);
+  };
+
+  const showCopyToast = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
-  function handleSaveRecord() {
-    if (!output) return;
+  };
+
+  // 保存歷史紀錄
+  const handleSaveRecord = () => {
+    if (!output) {
+      alert("目前尚無可保存的產出內容！");
+      return;
+    }
     const rec = {
       id: Date.now(),
       projectName,
       date: `${rocY}/${rocM}/${rocD}`,
       text: output,
+      plannedPct: parseFloat(plannedPct) || 0,
+      actualPct: parseFloat(actualPct) || 0,
       savedAt: new Date().toLocaleString("zh-TW")
     };
     saveRecords([rec, ...records]);
-    alert("已保存紀錄");
-  }
-  function deleteRecord(id) {
+    alert("本期提報紀錄已保存！可在「歷史紀錄」分頁查看與匯出。");
+  };
+
+  // 刪除歷史紀錄與彈窗
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const deleteRecord = (id) => {
     setPendingDelete(id);
-  }
-  function confirmDelete() {
+  };
+
+  const confirmDelete = () => {
     saveRecords(records.filter(r => r.id !== pendingDelete));
     setPendingDelete(null);
-  }
+  };
+
+  // 管理專案清單
   const [newName, setNewName] = useState("");
-  const [pendingRemove, setPendingRemove] = useState(null); // 待移除的工程名稱
-  const [pendingDelete, setPendingDelete] = useState(null); // 待刪除的紀錄 id
+  const [pendingRemove, setPendingRemove] = useState(null);
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
-  function addProject() {
+
+  const addProject = () => {
     const name = newName.trim();
     if (!name) {
       alert("請輸入工程名稱");
       return;
     }
     if (projects.includes(name)) {
-      alert("清單已有此工程");
+      alert("清單內已有此工程");
       return;
     }
     saveProjects([...projects, name]);
     setNewName("");
     setShowAdd(false);
-    alert("已新增工程到清單");
-  }
-  function removeProject(name) {
+    alert("已成功新增自訂工程！");
+  };
+
+  const removeProject = (name) => {
     setPendingRemove(name);
     setPwInput("");
     setPwError(false);
-  }
-  function confirmRemove() {
+  };
+
+  const confirmRemove = () => {
     if (pwInput !== REMOVE_PASSWORD) {
       setPwError(true);
       return;
@@ -401,797 +623,908 @@ function App() {
     setPendingRemove(null);
     setPwInput("");
     setPwError(false);
-  }
-  const yearOpts = [];
-  for (let y = 110; y <= 120; y++) yearOpts.push(y);
-  const monthOpts = Array.from({
-    length: 12
-  }, (_, i) => i + 1);
-  const dayOpts = Array.from({
-    length: 31
-  }, (_, i) => i + 1);
-  return /*#__PURE__*/React.createElement("div", {
-    style: styles.page
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.container
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.header
-  }, /*#__PURE__*/React.createElement("h1", {
-    style: styles.h1
-  }, "監造日報提報"), /*#__PURE__*/React.createElement("p", {
-    style: styles.sub
-  }, "貼上廠商日報文字，自動產生 LINE 回報內容")), /*#__PURE__*/React.createElement("div", {
-    style: styles.tabs
-  }, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.tab,
-      ...(tab === "form" ? styles.tabActive : {})
-    },
-    onClick: () => setTab("form")
-  }, "填寫"), /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.tab,
-      ...(tab === "history" ? styles.tabActive : {})
-    },
-    onClick: () => setTab("history")
-  }, "紀錄 (", records.length, ")")), tab === "form" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    style: styles.addRow
-  }, /*#__PURE__*/React.createElement("button", {
-    style: styles.addBtn,
-    onClick: () => setShowAdd(true)
-  }, "＋ 新增工程")), /*#__PURE__*/React.createElement("div", {
-    style: styles.card
-  }, /*#__PURE__*/React.createElement("label", {
-    style: styles.label
-  }, "① 貼上廠商日報文字"), /*#__PURE__*/React.createElement("textarea", {
-    style: styles.textarea,
-    rows: 8,
-    value: rawText,
-    onChange: e => setRawText(e.target.value),
-    placeholder: "一、工程名稱：...\n二、日期：115/6/24（三）\n三、天氣：上午/晴、下午/晴\n..."
-  }), /*#__PURE__*/React.createElement("button", {
-    style: styles.primaryBtn,
-    onClick: doParse
-  }, "自動解析 →")), parsed && /*#__PURE__*/React.createElement(React.Fragment, null, parsed.notes.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: styles.warnBox
-  }, parsed.notes.map((n, i) => /*#__PURE__*/React.createElement("div", {
-    key: i
-  }, "⚠ ", n))), /*#__PURE__*/React.createElement("div", {
-    style: styles.card
-  }, /*#__PURE__*/React.createElement("label", {
-    style: styles.label
-  }, "② 核對抓取結果（可手動修正）"), /*#__PURE__*/React.createElement(Field, {
-    label: "工程名稱"
-  }, /*#__PURE__*/React.createElement("select", {
-    style: styles.input,
-    value: projectName,
-    onChange: e => setProjectName(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "— 請選擇 —"), projects.map(p => /*#__PURE__*/React.createElement("option", {
-    key: p,
-    value: p
-  }, p)), projectName && !projects.includes(projectName) && /*#__PURE__*/React.createElement("option", {
-    value: projectName
-  }, projectName, "（解析值）"))), /*#__PURE__*/React.createElement(Field, {
-    label: "日期（民國）"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("select", {
-    style: styles.inputSm,
-    value: rocY,
-    onChange: e => setRocY(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "年"), yearOpts.map(y => /*#__PURE__*/React.createElement("option", {
-    key: y,
-    value: y
-  }, y))), /*#__PURE__*/React.createElement("select", {
-    style: styles.inputSm,
-    value: rocM,
-    onChange: e => setRocM(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "月"), monthOpts.map(mo => /*#__PURE__*/React.createElement("option", {
-    key: mo,
-    value: mo
-  }, mo))), /*#__PURE__*/React.createElement("select", {
-    style: styles.inputSm,
-    value: rocD,
-    onChange: e => setRocD(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "日"), dayOpts.map(d => /*#__PURE__*/React.createElement("option", {
-    key: d,
-    value: d
-  }, d))), /*#__PURE__*/React.createElement("span", {
-    style: styles.wd
-  }, wd ? `（${wd}）` : ""))), /*#__PURE__*/React.createElement(Field, {
-    label: "天氣"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "上午"), /*#__PURE__*/React.createElement("select", {
-    style: styles.inputSm,
-    value: weatherAm,
-    onChange: e => setWeatherAm(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "—"), WEATHER_OPTIONS.map(w => /*#__PURE__*/React.createElement("option", {
-    key: w,
-    value: w
-  }, w))), /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "下午"), /*#__PURE__*/React.createElement("select", {
-    style: styles.inputSm,
-    value: weatherPm,
-    onChange: e => setWeatherPm(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "—"), WEATHER_OPTIONS.map(w => /*#__PURE__*/React.createElement("option", {
-    key: w,
-    value: w
-  }, w))))), /*#__PURE__*/React.createElement(Field, {
-    label: "開工日（民國）"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("input", {
-    style: styles.inputSm,
-    value: startY,
-    onChange: e => setStartY(e.target.value),
-    placeholder: "年",
-    inputMode: "numeric"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: styles.inputSm,
-    value: startM,
-    onChange: e => setStartM(e.target.value),
-    placeholder: "月",
-    inputMode: "numeric"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: styles.inputSm,
-    value: startD,
-    onChange: e => setStartD(e.target.value),
-    placeholder: "日",
-    inputMode: "numeric"
-  }))), /*#__PURE__*/React.createElement(Field, {
-    label: "契約工期（日曆天）"
-  }, /*#__PURE__*/React.createElement("input", {
-    style: styles.input,
-    value: contractDays,
-    onChange: e => setContractDays(e.target.value),
-    inputMode: "decimal"
-  })), /*#__PURE__*/React.createElement(Field, {
-    label: "不計工期天數"
-  }, /*#__PURE__*/React.createElement("input", {
-    style: styles.input,
-    value: excludeDays,
-    onChange: e => setExcludeDays(e.target.value),
-    inputMode: "decimal",
-    placeholder: "無則留空或填 0，可填小數（例如：0.5）"
-  })), /*#__PURE__*/React.createElement(Field, {
-    label: "工期計算模式"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.modeBtn,
-      ...(durationMode === "fixed" ? styles.modeBtnActive : {})
-    },
-    onClick: () => setDurationMode("fixed")
-  }, "限期完工"), /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.modeBtn,
-      ...(durationMode === "extend" ? styles.modeBtnActive : {})
-    },
-    onClick: () => setDurationMode("extend")
-  }, "總工期延長")), /*#__PURE__*/React.createElement("div", {
-    style: styles.modeHint
-  }, durationMode === "fixed" ? "累計工期扣掉不計天數，契約工期不變" : "累計工期照算，契約工期加上不計天數")), /*#__PURE__*/React.createElement(Field, {
-    label: "累計工期"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "廠商"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...styles.inputSm,
-      ...(accumMismatch ? styles.mismatch : {})
-    },
-    value: vendorAccum,
-    onChange: e => setVendorAccum(e.target.value),
-    inputMode: "decimal"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "自算"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      ...styles.calcVal,
-      ...(accumMismatch ? styles.mismatchText : {})
+    alert("已移除該工程！");
+  };
+
+  // 歷史紀錄過濾與搜尋
+  const filteredRecords = useMemo(() => {
+    return records.filter(r => {
+      const matchSearch = r.projectName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          r.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          r.date.includes(searchQuery);
+      const matchProj = selectedHistoryProj === "all" || r.projectName === selectedHistoryProj;
+      return matchSearch && matchProj;
+    }).sort((a, b) => {
+      return historyOrder === "desc" ? b.id - a.id : a.id - b.id;
+    });
+  }, [records, searchQuery, selectedHistoryProj, historyOrder]);
+
+  // 計算該工程歷史進度，繪製迷你圖表 (Sparkline SVG)
+  const renderSparkline = (projName) => {
+    const projRecs = records
+      .filter(r => r.projectName === projName)
+      .sort((a, b) => a.id - b.id); // 由舊到新
+    
+    if (projRecs.length < 2) return null;
+    
+    const width = 120;
+    const height = 30;
+    const padding = 2;
+    
+    const maxVal = Math.max(...projRecs.map(r => r.actualPct), 1);
+    const minVal = Math.min(...projRecs.map(r => r.actualPct), 0);
+    const range = maxVal - minVal || 1;
+
+    const points = projRecs.map((r, idx) => {
+      const x = padding + (idx / (projRecs.length - 1)) * (width - padding * 2);
+      const y = height - padding - ((r.actualPct - minVal) / range) * (height - padding * 2);
+      return `${x},${y}`;
+    }).join(" ");
+
+    return (
+      <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 px-2 rounded text-xs">
+        <span className="text-slate-500">進度走勢:</span>
+        <svg width={width} height={height} className="overflow-visible">
+          <polyline
+            fill="none"
+            stroke="#0f766e"
+            strokeWidth="2"
+            points={points}
+          />
+          {projRecs.map((r, idx) => {
+            const x = padding + (idx / (projRecs.length - 1)) * (width - padding * 2);
+            const y = height - padding - ((r.actualPct - minVal) / range) * (height - padding * 2);
+            return (
+              <circle
+                key={idx}
+                cx={x}
+                cy={y}
+                r="3"
+                className="fill-brand-700 hover:r-4 cursor-pointer"
+                title={`${r.date}: ${r.actualPct}%`}
+              />
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
+  // 清除全部紀錄
+  const handleClearAllRecords = () => {
+    if (confirm("⚠️ 確定要清空全部保存的提報紀錄嗎？此動作無法復原！")) {
+      saveRecords([]);
     }
-  }, auto.accum || "—")), accumMismatch && /*#__PURE__*/React.createElement("div", {
-    style: styles.miniWarn
-  }, "⚠ 廠商與自算不一致，請確認")), /*#__PURE__*/React.createElement(Field, {
-    label: "剩餘工期"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "廠商"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...styles.inputSm,
-      ...(remainMismatch ? styles.mismatch : {})
-    },
-    value: vendorRemain,
-    onChange: e => setVendorRemain(e.target.value),
-    inputMode: "decimal"
-  }), /*#__PURE__*/React.createElement("span", {
-    style: styles.tag
-  }, "自算"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      ...styles.calcVal,
-      ...(remainMismatch ? styles.mismatchText : {})
-    }
-  }, auto.remain || "—")), remainMismatch && /*#__PURE__*/React.createElement("div", {
-    style: styles.miniWarn
-  }, "⚠ 廠商與自算不一致，請確認")), /*#__PURE__*/React.createElement(Field, {
-    label: "預定進度 %"
-  }, /*#__PURE__*/React.createElement("input", {
-    style: styles.input,
-    value: plannedPct,
-    onChange: e => setPlannedPct(e.target.value),
-    inputMode: "decimal"
-  })), /*#__PURE__*/React.createElement(Field, {
-    label: "實際進度 %"
-  }, /*#__PURE__*/React.createElement("input", {
-    style: styles.input,
-    value: actualPct,
-    onChange: e => setActualPct(e.target.value),
-    inputMode: "decimal"
-  })), /*#__PURE__*/React.createElement(Field, {
-    label: "本日工作項目"
-  }, /*#__PURE__*/React.createElement("textarea", {
-    style: styles.textareaSm,
-    rows: 3,
-    value: workItems,
-    onChange: e => setWorkItems(e.target.value)
-  }), samplingFound && /*#__PURE__*/React.createElement(Field, {
-    label: "施工取樣會驗"
-  }, /*#__PURE__*/React.createElement("textarea", {
-    style: styles.textareaSm,
-    rows: 2,
-    value: sampling,
-    onChange: e => setSampling(e.target.value),
-    placeholder: "無"
-  })), importantFound && /*#__PURE__*/React.createElement(Field, {
-    label: "重要記事"
-  }, /*#__PURE__*/React.createElement("textarea", {
-    style: styles.textareaSm,
-    rows: 2,
-    value: important,
-    onChange: e => setImportant(e.target.value),
-    placeholder: "無"
-  })))), /*#__PURE__*/React.createElement("div", {
-    style: styles.card
-  }, /*#__PURE__*/React.createElement("label", {
-    style: styles.label
-  }, "③ LINE 回報內容"), /*#__PURE__*/React.createElement("pre", {
-    style: styles.output
-  }, output), /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: styles.primaryBtn,
-    onClick: handleCopy
-  }, copied ? "✓ 已複製" : "複製"), /*#__PURE__*/React.createElement("button", {
-    style: styles.secondaryBtn,
-    onClick: handleSaveRecord
-  }, "保存紀錄"))))), tab === "history" && /*#__PURE__*/React.createElement("div", {
-    style: styles.card
-  }, /*#__PURE__*/React.createElement("label", {
-    style: styles.label
-  }, "歷史紀錄"), records.length === 0 && /*#__PURE__*/React.createElement("p", {
-    style: styles.empty
-  }, "尚無保存紀錄"), records.map(r => /*#__PURE__*/React.createElement("div", {
-    key: r.id,
-    style: styles.recItem
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.recHead
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: styles.recName
-  }, r.projectName || "(未命名)"), /*#__PURE__*/React.createElement("div", {
-    style: styles.recDate
-  }, r.date, "\u3000", r.savedAt)), /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: styles.miniBtn,
-    onClick: () => {
-      copyText(r.text);
-      alert("已複製");
-    }
-  }, "複製"), /*#__PURE__*/React.createElement("button", {
-    style: styles.miniDanger,
-    onClick: () => deleteRecord(r.id)
-  }, "刪除"))), /*#__PURE__*/React.createElement("pre", {
-    style: styles.recText
-  }, r.text)))), showAdd && /*#__PURE__*/React.createElement("div", {
-    style: styles.modalBg,
-    onClick: () => setShowAdd(false)
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.modal,
-    onClick: e => e.stopPropagation()
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: styles.modalTitle
-  }, "新增工程到清單"), /*#__PURE__*/React.createElement("p", {
-    style: styles.modalNote
-  }, "手動輸入工程名稱。新增後永久保存於本機。"), /*#__PURE__*/React.createElement("input", {
-    style: styles.input,
-    value: newName,
-    onChange: e => setNewName(e.target.value),
-    placeholder: "例：14.XX鄉XX大排復建工程"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: styles.primaryBtn,
-    onClick: addProject
-  }, "新增"), /*#__PURE__*/React.createElement("button", {
-    style: styles.secondaryBtn,
-    onClick: () => setShowAdd(false)
-  }, "關閉")), /*#__PURE__*/React.createElement("div", {
-    style: styles.divider
-  }), /*#__PURE__*/React.createElement("label", {
-    style: styles.labelSm
-  }, "目前清單（點 ✕ 移除自訂項目）"), /*#__PURE__*/React.createElement("div", {
-    style: styles.projList
-  }, projects.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p,
-    style: styles.projRow
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.projName
-  }, p), !DEFAULT_PROJECTS.includes(p) && /*#__PURE__*/React.createElement("button", {
-    style: styles.removeX,
-    onClick: () => removeProject(p)
-  }, "✕")))))), pendingRemove && /*#__PURE__*/React.createElement("div", {
-    style: styles.modalBg,
-    onClick: () => setPendingRemove(null)
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.modalSm,
-    onClick: e => e.stopPropagation()
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: styles.modalTitle
-  }, "移除工程"), /*#__PURE__*/React.createElement("p", {
-    style: styles.modalNote
-  }, "即將移除：", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: C.text
-    }
-  }, pendingRemove)), /*#__PURE__*/React.createElement("label", {
-    style: styles.labelSm
-  }, "請輸入密碼以確認移除"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...styles.input,
-      ...(pwError ? styles.mismatch : {})
-    },
-    type: "password",
-    inputMode: "numeric",
-    value: pwInput,
-    onChange: e => {
-      setPwInput(e.target.value);
-      setPwError(false);
-    },
-    placeholder: "密碼"
-  }), pwError && /*#__PURE__*/React.createElement("div", {
-    style: styles.miniWarn
-  }, "⚠ 密碼錯誤"), /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.primaryBtn,
-      background: C.danger
-    },
-    onClick: confirmRemove
-  }, "確認移除"), /*#__PURE__*/React.createElement("button", {
-    style: styles.secondaryBtn,
-    onClick: () => setPendingRemove(null)
-  }, "取消")))), pendingDelete && /*#__PURE__*/React.createElement("div", {
-    style: styles.modalBg,
-    onClick: () => setPendingDelete(null)
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.modalSm,
-    onClick: e => e.stopPropagation()
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: styles.modalTitle
-  }, "刪除紀錄"), /*#__PURE__*/React.createElement("p", {
-    style: styles.modalNote
-  }, "確定要刪除這筆紀錄嗎？此動作無法復原。"), /*#__PURE__*/React.createElement("div", {
-    style: styles.row
-  }, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.primaryBtn,
-      background: C.danger
-    },
-    onClick: confirmDelete
-  }, "確認刪除"), /*#__PURE__*/React.createElement("button", {
-    style: styles.secondaryBtn,
-    onClick: () => setPendingDelete(null)
-  }, "取消"))))));
+  };
+
+  // 生成下拉選項數值
+  const yearOpts = Array.from({ length: 11 }, (_, i) => 114 + i); // 114 ~ 124
+  const monthOpts = Array.from({ length: 12 }, (_, i) => i + 1);
+  const dayOpts = Array.from({ length: 31 }, (_, i) => i + 1);
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
+      
+      {/* 標頭頂部欄 */}
+      <header className="mb-8 text-center">
+        <div className="inline-flex items-center justify-center bg-brand-50 text-brand-700 w-14 h-14 rounded-2xl mb-3 shadow-sm border border-brand-100">
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+        </div>
+        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">監造日報提報智慧助手</h1>
+        <p className="text-sm text-slate-500 mt-1.5">貼上廠商日報自動檢算工期，一鍵生成 LINE 回報格式</p>
+      </header>
+
+      {/* 分頁 Tab */}
+      <div className="flex p-1.5 bg-slate-200/70 rounded-xl mb-6 gap-1">
+        <button
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+            tab === "form" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
+          }`}
+          onClick={() => setTab("form")}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          解析與申報
+        </button>
+        <button
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+            tab === "history" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
+          }`}
+          onClick={() => setTab("history")}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          歷史紀錄 ({records.length})
+        </button>
+        <button
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+            tab === "config" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
+          }`}
+          onClick={() => setTab("config")}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          工程清單
+        </button>
+      </div>
+
+      {/* 1. 解析與申報主分頁 */}
+      {tab === "form" && (
+        <div className="space-y-6">
+          
+          {/* 輸入區卡片 */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+            <div className="flex justify-between items-center mb-3">
+              <label className="block text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5">
+                <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">1</span>
+                貼上廠商日報原始文字
+              </label>
+              <button 
+                type="button" 
+                onClick={loadTemplate}
+                className="text-xs text-brand-700 hover:text-brand-900 font-semibold bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg transition-colors border border-brand-100"
+              >
+                ⚡ 載入測試範本
+              </button>
+            </div>
+            
+            <textarea
+              className="w-full border border-slate-200 rounded-xl p-3.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all font-mono text-sm leading-relaxed"
+              rows={7}
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              placeholder="貼上施工日報格式，例如：&#13;工程名稱：...&#13;日期：115/07/16&#13;天氣：上午：晴 下午：晴..."
+            />
+            
+            <button
+              onClick={doParse}
+              className="w-full mt-3 bg-brand-700 hover:bg-brand-800 active:scale-[0.99] text-white py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+            >
+              <span>自動解析抓取資料</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+
+          {/* 解析結果核對 */}
+          {parsed && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-5 animate-[fadeIn_0.3s_ease-out]">
+              
+              <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                <label className="text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5">
+                  <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">2</span>
+                  核對並修正欄位
+                </label>
+                <span className="text-xs text-slate-400 font-medium">可手動調整以下欄位，輸出會即時同步</span>
+              </div>
+
+              {/* 警示盒 */}
+              {parsed.notes.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl text-xs space-y-1.5 font-medium shadow-inner">
+                  <span className="font-bold block text-sm mb-1 text-amber-900">⚠️ 解析注意提醒：</span>
+                  {parsed.notes.map((n, i) => (
+                    <div key={i} className="flex items-start gap-1">
+                      <span className="text-amber-600">▪</span>
+                      <span>{n}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 1. 工程名稱 */}
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-slate-500">工程名稱</span>
+                <select
+                  className="w-full border border-slate-200 rounded-xl p-2.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 text-sm font-medium"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                >
+                  <option value="">— 請選擇或輸入工程 —</option>
+                  {projects.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                  {projectName && !projects.includes(projectName) && (
+                    <option value={projectName}>{projectName} (手動解析)</option>
+                  )}
+                </select>
+              </div>
+
+              {/* 2. 報表日期 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">提報日期 (民國)</span>
+                  <div className="flex gap-2 items-center">
+                    <select
+                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
+                      value={rocY}
+                      onChange={(e) => setRocY(e.target.value)}
+                    >
+                      <option value="">年</option>
+                      {yearOpts.map(y => <option key={y} value={y}>{y} 年</option>)}
+                    </select>
+                    <select
+                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
+                      value={rocM}
+                      onChange={(e) => setRocM(e.target.value)}
+                    >
+                      <option value="">月</option>
+                      {monthOpts.map(m => <option key={m} value={m}>{m} 月</option>)}
+                    </select>
+                    <select
+                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
+                      value={rocD}
+                      onChange={(e) => setRocD(e.target.value)}
+                    >
+                      <option value="">日</option>
+                      {dayOpts.map(d => <option key={d} value={d}>{d} 日</option>)}
+                    </select>
+                    {wd && <span className="text-sm font-extrabold text-brand-700 whitespace-nowrap bg-brand-50 px-2.5 py-1.5 rounded-lg border border-brand-100">週{wd}</span>}
+                  </div>
+                </div>
+
+                {/* 天氣 */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">天氣概況</span>
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
+                      <span className="text-xs text-slate-400 font-bold pr-2 border-r border-slate-200">上午</span>
+                      <select
+                        className="w-full bg-transparent p-2 text-sm focus:outline-none"
+                        value={weatherAm}
+                        onChange={(e) => setWeatherAm(e.target.value)}
+                      >
+                        {WEATHER_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
+                      <span className="text-xs text-slate-400 font-bold pr-2 border-r border-slate-200">下午</span>
+                      <select
+                        className="w-full bg-transparent p-2 text-sm focus:outline-none"
+                        value={weatherPm}
+                        onChange={(e) => setWeatherPm(e.target.value)}
+                      >
+                        {WEATHER_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. 開工日與契約工期 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">本案開工日期 (民國)</span>
+                  <div className="flex gap-2">
+                    <input
+                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
+                      value={startY}
+                      onChange={(e) => setStartY(e.target.value)}
+                      placeholder="年"
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
+                      value={startM}
+                      onChange={(e) => setStartM(e.target.value)}
+                      placeholder="月"
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
+                      value={startD}
+                      onChange={(e) => setStartD(e.target.value)}
+                      placeholder="日"
+                      inputMode="numeric"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">契約工期 (日曆天)</span>
+                  <input
+                    type="number"
+                    className="w-full border border-slate-200 rounded-xl p-2 text-sm focus:ring-brand-500/20 focus:border-brand-500"
+                    value={contractDays}
+                    onChange={(e) => setContractDays(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+              </div>
+
+              {/* 4. 不計工期與計算模式 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">不計工期天數</span>
+                  <input
+                    type="text"
+                    className="w-full border border-slate-200 rounded-xl p-2 text-sm focus:ring-brand-500/20 focus:border-brand-500"
+                    value={excludeDays}
+                    onChange={(e) => setExcludeDays(e.target.value)}
+                    placeholder="無則不填或 0，可填小數"
+                    inputMode="decimal"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">工期完工計算模式</span>
+                  <div className="flex rounded-xl p-0.5 bg-slate-100 border border-slate-200">
+                    <button
+                      type="button"
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        durationMode === "fixed" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                      onClick={() => setDurationMode("fixed")}
+                    >
+                      限期完工
+                    </button>
+                    <button
+                      type="button"
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        durationMode === "extend" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                      onClick={() => setDurationMode("extend")}
+                    >
+                      總工期延長
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    {durationMode === "fixed" ? "ℹ 累計工期扣除不計天數，契約工期維持不變" : "ℹ 累計工期照算，不計天數直接加進總契約工期"}
+                  </p>
+                </div>
+              </div>
+
+              {/* 5. 智慧工期計算與廠商值比對 */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3.5">
+                <span className="text-xs font-extrabold text-slate-600 block">工期智能檢算比對區</span>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  
+                  {/* 累計工期 */}
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-slate-500 block">累計工期</span>
+                    <div className="flex gap-1.5 items-center bg-white border border-slate-200 rounded-xl p-2">
+                      <div className="flex-1">
+                        <span className="text-[10px] text-slate-400 block font-bold">廠商申報</span>
+                        <input
+                          type="text"
+                          className={`w-full bg-transparent font-mono text-sm font-semibold focus:outline-none ${accumMismatch ? "text-rose-600 font-extrabold" : "text-slate-700"}`}
+                          value={vendorAccum}
+                          onChange={(e) => setVendorAccum(e.target.value)}
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <div className="border-l border-slate-100 pl-2">
+                        <span className="text-[10px] text-slate-400 block font-bold">系統自算</span>
+                        <span className={`text-sm font-mono font-extrabold block ${accumMismatch ? "text-rose-600" : "text-slate-700"}`}>
+                          {auto.accum || "—"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 剩餘工期 */}
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-slate-500 block">剩餘工期</span>
+                    <div className="flex gap-1.5 items-center bg-white border border-slate-200 rounded-xl p-2">
+                      <div className="flex-1">
+                        <span className="text-[10px] text-slate-400 block font-bold">廠商申報</span>
+                        <input
+                          type="text"
+                          className={`w-full bg-transparent font-mono text-sm font-semibold focus:outline-none ${remainMismatch ? "text-rose-600 font-extrabold" : "text-slate-700"}`}
+                          value={vendorRemain}
+                          onChange={(e) => setVendorRemain(e.target.value)}
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <div className="border-l border-slate-100 pl-2">
+                        <span className="text-[10px] text-slate-400 block font-bold">系統自算</span>
+                        <span className={`text-sm font-mono font-extrabold block ${remainMismatch ? "text-rose-600" : "text-slate-700"}`}>
+                          {auto.remain || "—"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* 警示與快速修正 */}
+                {(accumMismatch || remainMismatch) && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-pulse">
+                    <div>
+                      <span className="text-red-800 text-xs font-extrabold block">⚠️ 檢測到申報與自算數據不合</span>
+                      <p className="text-[11px] text-red-600">系統依您設定的參數自算應為 <b>累計 {auto.accum} 天 / 剩餘 {auto.remain} 天</b></p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={applyAutoValues}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-colors shadow-sm self-end md:self-center"
+                    >
+                      🔧 一鍵修正為自算值
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 6. 進度填寫 */}
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">預定進度 (%)</span>
+                  <input
+                    type="text"
+                    className="w-full border border-slate-200 rounded-xl p-2 text-sm font-mono focus:ring-brand-500/20 focus:border-brand-500"
+                    value={plannedPct}
+                    onChange={(e) => setPlannedPct(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">實際進度 (%)</span>
+                  <input
+                    type="text"
+                    className="w-full border border-slate-200 rounded-xl p-2 text-sm font-mono focus:ring-brand-500/20 focus:border-brand-500"
+                    value={actualPct}
+                    onChange={(e) => setActualPct(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+              </div>
+
+              {/* 7. 進度可視化條 */}
+              {plannedPct || actualPct ? (
+                <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-150">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                    <span>進度落後/超前狀態:</span>
+                    <span className={parseFloat(actualPct) >= parseFloat(plannedPct) ? "text-emerald-600" : "text-rose-600"}>
+                      {(parseFloat(actualPct || 0) - parseFloat(plannedPct || 0)).toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden relative">
+                      <div className="bg-slate-400 h-full absolute left-0" style={{ width: `${Math.min(parseFloat(plannedPct || 0), 100)}%` }}></div>
+                      <div className="bg-brand-600 h-full absolute left-0 mix-blend-multiply" style={{ width: `${Math.min(parseFloat(actualPct || 0), 100)}%` }}></div>
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-400">
+                      <span>預定: {plannedPct || 0}% (灰)</span>
+                      <span>實際: {actualPct || 0}% (綠)</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 8. 本日工作與選填項目 */}
+              <div className="space-y-4 border-t border-slate-100 pt-4">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-500 block">本日工作項目</span>
+                  <textarea
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                    rows={3}
+                    value={workItems}
+                    onChange={(e) => setWorkItems(e.target.value)}
+                  />
+                </div>
+
+                {/* 施工取樣控制 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 block">施工取樣會驗 (選填)</span>
+                    <button
+                      type="button"
+                      className="text-xs text-brand-700 font-bold hover:underline"
+                      onClick={() => setSamplingFound(!samplingFound)}
+                    >
+                      {samplingFound ? "✕ 隱藏此項" : "＋ 開啟此項"}
+                    </button>
+                  </div>
+                  {samplingFound && (
+                    <textarea
+                      className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                      rows={2}
+                      value={sampling}
+                      onChange={(e) => setSampling(e.target.value)}
+                      placeholder="請輸入取樣會驗內容..."
+                    />
+                  )}
+                </div>
+
+                {/* 重要記事控制 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 block">重要記事 (選填)</span>
+                    <button
+                      type="button"
+                      className="text-xs text-brand-700 font-bold hover:underline"
+                      onClick={() => setImportantFound(!importantFound)}
+                    >
+                      {importantFound ? "✕ 隱藏此項" : "＋ 開啟此項"}
+                    </button>
+                  </div>
+                  {importantFound && (
+                    <textarea
+                      className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                      rows={2}
+                      value={important}
+                      onChange={(e) => setImportant(e.target.value)}
+                      placeholder="請輸入重要記事內容..."
+                    />
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* 預覽輸出卡片 */}
+          {output && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-md space-y-4">
+              <label className="block text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">3</span>
+                LINE 回報內容預覽
+              </label>
+
+              <pre className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs md:text-sm text-slate-700 font-mono whitespace-pre-wrap break-all leading-relaxed max-h-[350px] overflow-y-auto">
+                {output}
+              </pre>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => copyText(output)}
+                  className={`flex-1 font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 ${
+                    copied 
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700" 
+                      : "bg-brand-700 text-white hover:bg-brand-800 active:scale-[0.98]"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {copied 
+                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    }
+                  </svg>
+                  <span>{copied ? "✓ 已成功複製" : "一鍵複製 LINE 回報"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveRecord}
+                  className="bg-white hover:bg-slate-50 text-brand-800 border-2 border-brand-700 font-bold py-3 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  <span>儲存至歷史</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* 2. 歷史紀錄分頁 */}
+      {tab === "history" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <span className="text-slate-800 font-extrabold text-[15px]">已保存的提報紀錄</span>
+              {records.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllRecords}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-bold border border-rose-200 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  🗑️ 清空所有紀錄
+                </button>
+              )}
+            </div>
+
+            {/* 搜尋與篩選列 */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  placeholder="搜尋工程、日期或內容關鍵字..."
+                  className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-brand-500/20 focus:border-brand-500"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <div className="flex gap-2">
+                {/* 依工程篩選 */}
+                <select
+                  className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 text-slate-700"
+                  value={selectedHistoryProj}
+                  onChange={(e) => setSelectedHistoryProj(e.target.value)}
+                >
+                  <option value="all">全部工程 ({records.length})</option>
+                  {[...new Set(records.map(r => r.projectName))].map(name => (
+                    <option key={name} value={name}>{name.replace(/^\d+\./, "")}</option>
+                  ))}
+                </select>
+
+                {/* 排序 */}
+                <select
+                  className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 text-slate-700"
+                  value={historyOrder}
+                  onChange={(e) => setHistoryOrder(e.target.value)}
+                >
+                  <option value="desc">最舊 ➜ 最新</option>
+                  <option value="asc">最新 ➜ 最舊</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 工程進度走勢 (僅在篩選特定工程時顯示) */}
+            {selectedHistoryProj !== "all" && renderSparkline(selectedHistoryProj)}
+
+            {/* 紀錄列表 */}
+            {filteredRecords.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v4.586a1 1 0 01-.293.707l-2.828 2.828a1 1 0 01-1.414 0l-2.828-2.828A1 1 0 012 13.586V13" />
+                </svg>
+                <p className="text-sm font-medium">沒有符合條件的保存紀錄</p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                {filteredRecords.map(r => (
+                  <div key={r.id} className="border border-slate-200/80 rounded-xl p-4 bg-slate-50/50 hover:bg-slate-50 transition-colors space-y-3">
+                    
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="space-y-1">
+                        <span className="bg-brand-100 text-brand-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                          {r.date}
+                        </span>
+                        <h4 className="text-sm font-extrabold text-slate-800 leading-snug">
+                          {r.projectName}
+                        </h4>
+                        <p className="text-[10px] text-slate-400">儲存時間: {r.savedAt}</p>
+                      </div>
+
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => { copyText(r.text); }}
+                          className="bg-brand-50 hover:bg-brand-100 text-brand-800 border border-brand-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          複製
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteRecord(r.id)}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 進度顯示與展開 */}
+                    {r.plannedPct > 0 || r.actualPct > 0 ? (
+                      <div className="flex gap-3 text-xs text-slate-500 bg-white border border-slate-100 p-1.5 px-2.5 rounded-lg w-max font-mono font-medium">
+                        <span>預定: {r.plannedPct}%</span>
+                        <span className="text-slate-300">|</span>
+                        <span>實際: {r.actualPct}%</span>
+                      </div>
+                    ) : null}
+
+                    <details className="group">
+                      <summary className="text-xs text-brand-700 hover:text-brand-900 font-bold cursor-pointer list-none flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                        </svg>
+                        展開詳細回報文字
+                      </summary>
+                      <pre className="mt-2 bg-white border border-slate-200 p-3 rounded-lg text-xs font-mono text-slate-600 leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
+                        {r.text}
+                      </pre>
+                    </details>
+
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* 3. 工程清單配置分頁 */}
+      {tab === "config" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
+            
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <span className="text-slate-800 font-extrabold text-[15px]">工程資料庫管理</span>
+              <button
+                type="button"
+                onClick={() => setShowAdd(true)}
+                className="bg-brand-700 hover:bg-brand-800 text-white font-bold text-xs py-2 px-3.5 rounded-lg transition-all shadow-sm flex items-center gap-1"
+              >
+                <span>＋ 新增自訂工程</span>
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-normal">
+              這裡列出了目前抓取匹配的工程清單，系統解析時會自動模糊匹配這裡的工程全名。您新增的自訂項目會保存於本瀏覽器，如欲刪除預設項目需輸入管理密碼。
+            </p>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="divide-y divide-slate-100 max-h-[450px] overflow-y-auto">
+                {projects.map((p, idx) => {
+                  const isDefault = DEFAULT_PROJECTS.includes(p);
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-3 px-4 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5">
+                        <span className="text-sm font-semibold text-slate-700 block leading-snug">
+                          {p}
+                        </span>
+                        <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                          isDefault ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"
+                        }`}>
+                          {isDefault ? "系統預設" : "使用者自訂"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeProject(p)}
+                        className="text-slate-400 hover:text-rose-600 p-1.5 rounded transition-colors"
+                        title="移除工程"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 彈窗：新增工程 */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl space-y-4">
+            <div className="flex justify-between items-start">
+              <h3 className="text-base font-bold text-slate-800">新增工程到資料庫</h3>
+              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">請輸入工程之全銜。建議保持與合約書相同之編號與名稱，便於系統日後進行高精準度解析匹配。</p>
+              
+              <input
+                type="text"
+                className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="例：14.麥寮鄉後安寮小段改善工程"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={addProject}
+                className="flex-1 bg-brand-700 hover:bg-brand-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+              >
+                確認新增
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAdd(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 彈窗：移除確認 (安全密碼) */}
+      {pendingRemove && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-800">確認移除工程項目</h3>
+            
+            <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-xs leading-normal">
+              即將移出：<b className="font-extrabold">{pendingRemove}</b>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs text-slate-400 block font-bold">請輸入管理密碼以確認移除</span>
+              <input
+                type="password"
+                className={`w-full border rounded-xl p-2.5 text-sm text-center ${
+                  pwError ? "border-rose-400 bg-rose-50 focus:ring-rose-500/20" : "border-slate-200 focus:ring-brand-500/20"
+                }`}
+                value={pwInput}
+                onChange={(e) => {
+                  setPwInput(e.target.value);
+                  setPwError(false);
+                }}
+                placeholder="安全管理碼"
+                inputMode="numeric"
+              />
+              {pwError && <span className="text-[10px] text-rose-600 block font-bold">❌ 安全認證密碼不正確！</span>}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={confirmRemove}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+              >
+                認證並移除
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingRemove(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 彈窗：刪除歷史紀錄確認 */}
+      {pendingDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-800">確定刪除此提報紀錄？</h3>
+            <p className="text-xs text-slate-400 leading-normal">此操作將永久從本地儲存中移除此回報，且無法復原。</p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors"
+              >
+                確定刪除
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
 }
-const C = {
-  bg: "#f1f5f9",
-  card: "#ffffff",
-  border: "#e2e8f0",
-  text: "#1e293b",
-  sub: "#64748b",
-  primary: "#0f766e",
-  danger: "#dc2626",
-  warn: "#b45309",
-  warnBg: "#fef3c7",
-  red: "#dc2626",
-  redBg: "#fee2e2"
-};
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: C.bg,
-    padding: "12px",
-    fontFamily: "system-ui, -apple-system, 'Microsoft JhengHei', sans-serif",
-    color: C.text
-  },
-  container: {
-    maxWidth: 520,
-    margin: "0 auto"
-  },
-  header: {
-    textAlign: "center",
-    padding: "16px 8px 12px",
-    cursor: "default",
-    userSelect: "none",
-    WebkitUserSelect: "none"
-  },
-  h1: {
-    fontSize: 22,
-    fontWeight: 800,
-    margin: 0,
-    color: C.primary
-  },
-  sub: {
-    fontSize: 13,
-    color: C.sub,
-    margin: "4px 0 0"
-  },
-  tabs: {
-    display: "flex",
-    gap: 6,
-    marginBottom: 12
-  },
-  tab: {
-    flex: 1,
-    padding: "10px",
-    border: `1px solid ${C.border}`,
-    background: C.card,
-    borderRadius: 10,
-    fontSize: 15,
-    fontWeight: 600,
-    color: C.sub,
-    cursor: "pointer"
-  },
-  tabActive: {
-    background: C.primary,
-    color: "#fff",
-    borderColor: C.primary
-  },
-  card: {
-    background: C.card,
-    border: `1px solid ${C.border}`,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12
-  },
-  label: {
-    display: "block",
-    fontSize: 14,
-    fontWeight: 700,
-    marginBottom: 8,
-    color: C.text
-  },
-  labelSm: {
-    display: "block",
-    fontSize: 12,
-    fontWeight: 600,
-    margin: "8px 0",
-    color: C.sub
-  },
-  textarea: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: 10,
-    fontFamily: "inherit",
-    resize: "vertical",
-    lineHeight: 1.6
-  },
-  textareaSm: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: 8,
-    fontFamily: "inherit",
-    resize: "vertical",
-    lineHeight: 1.5
-  },
-  primaryBtn: {
-    flex: 1,
-    marginTop: 10,
-    padding: "11px 16px",
-    background: C.primary,
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  secondaryBtn: {
-    flex: 1,
-    marginTop: 10,
-    padding: "11px 16px",
-    background: "#fff",
-    color: C.primary,
-    border: `1px solid ${C.primary}`,
-    borderRadius: 8,
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  field: {
-    marginBottom: 12
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: C.sub,
-    marginBottom: 5
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: "9px 10px",
-    fontFamily: "inherit"
-  },
-  inputSm: {
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: "9px 8px",
-    fontFamily: "inherit",
-    width: 70,
-    boxSizing: "border-box"
-  },
-  row: {
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-    flexWrap: "wrap"
-  },
-  tag: {
-    fontSize: 12,
-    color: C.sub,
-    fontWeight: 600
-  },
-  wd: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: C.primary
-  },
-  calcVal: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: C.text,
-    minWidth: 40
-  },
-  mismatch: {
-    border: `2px solid ${C.red}`,
-    background: C.redBg
-  },
-  mismatchText: {
-    color: C.red
-  },
-  miniWarn: {
-    fontSize: 12,
-    color: C.red,
-    marginTop: 4,
-    fontWeight: 600
-  },
-  warnBox: {
-    background: C.warnBg,
-    border: `1px solid ${C.warn}`,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 13,
-    color: C.warn,
-    fontWeight: 600
-  },
-  output: {
-    background: "#f8fafc",
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    fontFamily: "inherit",
-    lineHeight: 1.7,
-    margin: 0
-  },
-  empty: {
-    color: C.sub,
-    fontSize: 14,
-    textAlign: "center",
-    padding: 20
-  },
-  recItem: {
-    border: `1px solid ${C.border}`,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10
-  },
-  recHead: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 8
-  },
-  recName: {
-    fontSize: 14,
-    fontWeight: 700
-  },
-  recDate: {
-    fontSize: 12,
-    color: C.sub,
-    marginTop: 2
-  },
-  recText: {
-    background: "#f8fafc",
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 12,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    fontFamily: "inherit",
-    lineHeight: 1.5,
-    margin: "8px 0 0",
-    maxHeight: 120,
-    overflow: "auto"
-  },
-  miniBtn: {
-    padding: "5px 12px",
-    background: C.primary,
-    color: "#fff",
-    border: "none",
-    borderRadius: 6,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer"
-  },
-  miniDanger: {
-    padding: "5px 12px",
-    background: "#fff",
-    color: C.danger,
-    border: `1px solid ${C.danger}`,
-    borderRadius: 6,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer"
-  },
-  modalBg: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    zIndex: 100
-  },
-  modal: {
-    background: "#fff",
-    borderRadius: 14,
-    padding: 18,
-    maxWidth: 460,
-    width: "100%",
-    maxHeight: "85vh",
-    overflow: "auto"
-  },
-  modalSm: {
-    background: "#fff",
-    borderRadius: 14,
-    padding: 18,
-    maxWidth: 360,
-    width: "100%"
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 800,
-    margin: "0 0 6px"
-  },
-  modalNote: {
-    fontSize: 13,
-    color: C.sub,
-    margin: "0 0 12px"
-  },
-  divider: {
-    height: 1,
-    background: C.border,
-    margin: "16px 0"
-  },
-  projList: {
-    maxHeight: 200,
-    overflow: "auto"
-  },
-  projRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 0",
-    borderBottom: `1px solid ${C.border}`
-  },
-  projName: {
-    fontSize: 12,
-    color: C.text,
-    lineHeight: 1.4
-  },
-  removeX: {
-    background: C.redBg,
-    color: C.danger,
-    border: "none",
-    borderRadius: 6,
-    width: 26,
-    height: 26,
-    fontSize: 14,
-    cursor: "pointer",
-    flexShrink: 0
-  },
-  addRow: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginBottom: 10
-  },
-  addBtn: {
-    padding: "9px 16px",
-    background: "#fff",
-    color: C.primary,
-    border: `1.5px solid ${C.primary}`,
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  modeBtn: {
-    flex: 1,
-    padding: "9px 12px",
-    background: "#fff",
-    color: C.sub,
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer"
-  },
-  modeBtnActive: {
-    background: C.primary,
-    color: "#fff",
-    borderColor: C.primary
-  },
-  modeHint: {
-    fontSize: 12,
-    color: C.sub,
-    marginTop: 6
-  }
-};
-ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+
+// 渲染 App 組件
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
