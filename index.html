@@ -90,28 +90,6 @@ const REMOVE_PASSWORD = "0827"; // 移除預設工程密碼
 const WEATHER_OPTIONS = ["晴", "多雲", "陰", "雨", "雷陣雨", "颱風"];
 const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
 
-// 測試範本文字，供使用者一鍵填入測試
-const TEST_TEMPLATE = `工程名稱：10.Danas-F-06-02-05-二崙鄉二崙大排(八角亭段1018地號旁)右岸復建工程
-日期：115/07/16
-天氣：上午：晴、下午：雷陣雨
-開工日期：115/03/01
-契約工期：180天
-累計工期：138天
-剩餘工期：42天
-不計工期共 5.5 天
-預定進度：78.5%
-實際進度：80.2%
-本日工作項目：
-1. 護岸混凝土澆置 120米
-2. 頂版範本組立 15組
-3. 現場清理與安全圍籬維護
-
-施工取樣：
-1. 混凝土抗壓強度試體取樣 3組 (28天)
-
-重要記事：
-下午遭遇突發大雷雨，自14:30起暫停戶外混凝土澆置作業，並做好防雨帆布遮蓋。`;
-
 function rocWeekday(rocY, m, d) {
   const dt = new Date(parseInt(rocY) + 1911, parseInt(m) - 1, parseInt(d));
   if (isNaN(dt.getTime())) return "";
@@ -123,6 +101,23 @@ function formatDays(num) {
   if (isNaN(num)) return "";
   return Number(num.toFixed(1)).toString();
 }
+
+// 輔助檢查內容是否為空或填寫「無」
+const isEmptyOrNo = (text) => {
+  if (!text) return true;
+  // 過濾掉所有空白、常見標點符號與換行，只保留實質文字
+  const clean = text.replace(/[\s\r\n、，。：:.,\-_　]/g, "").trim();
+  return (
+    clean === "" || 
+    clean === "無" || 
+    clean === "無事項" || 
+    clean === "無工作" || 
+    clean === "無重要記事" || 
+    clean === "無施工取樣" ||
+    clean === "無會驗" ||
+    clean === "無取樣"
+  );
+};
 
 function parseReport(text) {
   const result = {
@@ -241,15 +236,15 @@ function parseReport(text) {
     result.matched.actual = true;
   }
 
-  // 8. 本日工作項目 (抓取到下個主要標題前)
-  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣|取樣會驗|重要記事|查驗項目|施工監造工作內容)[、，。:：\s]|$)/);
+  // 8. 本日工作項目 (抓取到下個主要標題前，優化比對關鍵字以防止部分匹配)
+  m = t.match(/本日(?:工作|施工)項目[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:七|八|施工取樣會驗|施工取樣|取樣會驗|重要記事|查驗項目|施工監造工作內容)[、，。:：\s]|$)/);
   if (m) {
     result.workItems = m[1].trim();
     result.matched.workItems = true;
   }
 
-  // 9. 施工取樣
-  m = t.match(/(?:施工取樣|取樣會驗)[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:八|九|重要記事|查驗項目)[、，。:：\s]|$)/);
+  // 9. 施工取樣 (優先完整匹配「施工取樣會驗」防止 partial match)
+  m = t.match(/(?:施工取樣會驗|施工取樣|取樣會驗)[：:\s]*\n?([\s\S]*?)(?=\n\s*(?:八|九|重要記事|查驗項目)[、，。:：\s]|$)/);
   if (m) {
     result.sampling = m[1].trim();
   }
@@ -366,13 +361,30 @@ function App() {
     } catch (e) {}
   };
 
-  // 載入預設範本
-  const loadTemplate = () => {
-    setRawText(TEST_TEMPLATE);
-    setTimeout(() => {
-      const parsedRes = parseReport(TEST_TEMPLATE);
-      applyParsedResults(parsedRes);
-    }, 100);
+  // 徹底清空所有輸入狀態
+  const handleClearAllFields = () => {
+    setRawText("");
+    setParsed(null);
+    setProjectName("");
+    setRocY("");
+    setRocM("");
+    setRocD("");
+    setWeatherAm("晴");
+    setWeatherPm("晴");
+    setStartY("");
+    setStartM("");
+    setStartD("");
+    setContractDays("");
+    setVendorAccum("");
+    setVendorRemain("");
+    setExcludeDays("");
+    setPlannedPct("");
+    setActualPct("");
+    setWorkItems("");
+    setSampling("");
+    setSamplingFound(false);
+    setImportant("");
+    setImportantFound(false);
   };
 
   // 將解析出來的資料，套用到表單 state
@@ -416,7 +428,7 @@ function App() {
     setActualPct(r.actualPct || "");
     setWorkItems(r.workItems || "");
     
-    // 如果有施工取樣或重要記事
+    // 如果有施工取樣或重要記事，並且其內容不是「無」
     if (r.sampling) {
       setSampling(r.sampling);
       setSamplingFound(true);
@@ -494,26 +506,34 @@ function App() {
     lines.push(`五、工程進度`);
     lines.push(`(1)預定進度：${plannedPct}%`);
     lines.push(`(2)實際進度：${actualPct}%`);
-    lines.push(`六、本日工作項目`);
-    lines.push(workItems || "無");
 
-    // 判斷選填項目
-    const cleanSampling = (sampling || "").trim();
-    const hasSampling = samplingFound && cleanSampling !== "" && cleanSampling !== "無";
+    // 項目索引數與中文數字陣列
+    let currentIndex = 6;
+    const cnNums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 
-    const cleanImportant = (important || "").trim();
-    const hasImportant = importantFound && cleanImportant !== "" && cleanImportant !== "無";
-
-    let itemIndex = 7;
-    if (hasSampling) {
-      lines.push(`七、施工取樣會驗`);
-      lines.push(cleanSampling);
-      itemIndex = 8;
+    // 本日工作項目
+    if (!isEmptyOrNo(workItems)) {
+      lines.push(`${cnNums[currentIndex - 1]}、本日工作項目`);
+      lines.push(workItems.trim());
+      currentIndex++;
     }
+
+    // 施工取樣會驗
+    const cleanSampling = (sampling || "").trim();
+    const hasSampling = samplingFound && !isEmptyOrNo(cleanSampling);
+    if (hasSampling) {
+      lines.push(`${cnNums[currentIndex - 1]}、施工取樣會驗`);
+      lines.push(cleanSampling);
+      currentIndex++;
+    }
+
+    // 重要記事
+    const cleanImportant = (important || "").trim();
+    const hasImportant = importantFound && !isEmptyOrNo(cleanImportant);
     if (hasImportant) {
-      const cnNum = itemIndex === 7 ? "七" : "八";
-      lines.push(`${cnNum}、重要記事`);
+      lines.push(`${cnNums[currentIndex - 1]}、重要記事`);
       lines.push(cleanImportant);
+      currentIndex++;
     }
 
     return lines.join("\n");
@@ -765,13 +785,15 @@ function App() {
                 <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">1</span>
                 貼上廠商日報原始文字
               </label>
-              <button 
-                type="button" 
-                onClick={loadTemplate}
-                className="text-xs text-brand-700 hover:text-brand-900 font-semibold bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg transition-colors border border-brand-100"
-              >
-                ⚡ 載入測試範本
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  type="button" 
+                  onClick={handleClearAllFields}
+                  className="text-xs text-rose-700 hover:text-rose-900 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-colors border border-rose-100"
+                >
+                  🗑️ 清空內容
+                </button>
+              </div>
             </div>
             
             <textarea
@@ -1187,7 +1209,7 @@ function App() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     {copied 
                       ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     }
                   </svg>
                   <span>{copied ? "✓ 已成功複製" : "一鍵複製 LINE 回報"}</span>
