@@ -36,6 +36,13 @@ function rocWeekday(rocY, m, d) {
   if (isNaN(dt.getTime())) return "";
   return WEEK_CN[dt.getDay()];
 }
+
+// 格式化輸出天數，若為整數則不顯示小數點，否則保留一位小數
+function formatDays(num) {
+  if (isNaN(num)) return "";
+  return Number(num.toFixed(1)).toString();
+}
+
 function parseReport(text) {
   const result = {
     projectName: "",
@@ -93,23 +100,23 @@ function parseReport(text) {
     result.startD = m[3];
     result.matched.start = true;
   }
-  m = t.match(/契約工期[：:\s]*(\d+)/);
+  m = t.match(/契約工期[：:\s]*(\d+(\.\d+)?)/);
   if (m) {
     result.contractDays = m[1];
     result.matched.contractDays = true;
   }
-  m = t.match(/累計工期[：:\s]*(\d+)/);
+  m = t.match(/累計工期[：:\s]*(\d+(\.\d+)?)/);
   if (m) {
     result.accumDays = m[1];
     result.matched.accumDays = true;
   }
-  m = t.match(/剩餘工期[：:\s]*(\d+)/);
+  m = t.match(/剩餘工期[：:\s]*(\d+(\.\d+)?)/);
   if (m) {
     result.remainDays = m[1];
     result.matched.remainDays = true;
   }
-  // 不計工期天數：支援「不計工期共5天」「不計工期：5」「不計天數 5」等寫法
-  m = t.match(/不計(?:工期|天數|日數)[^\d\n]*(\d+)/);
+  // 不計工期天數：支援「不計工期共5.5天」「不計工期：0.5」「不計天數 5」等寫法
+  m = t.match(/不計(?:工期|天數|日數)[^\d\n]*(\d+(\.\d+)?)/);
   if (m) {
     result.excludeDays = m[1];
     result.matched.excludeDays = true;
@@ -131,8 +138,8 @@ function parseReport(text) {
   }
   if (result.contractDays && result.accumDays && result.remainDays) {
     const sum = +result.accumDays + +result.remainDays;
-    if (sum !== +result.contractDays) {
-      result.notes.push(`工期不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${sum}，但契約為 ${result.contractDays}。`);
+    if (Math.abs(sum - +result.contractDays) > 0.01) {
+      result.notes.push(`工期不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${formatDays(sum)}，但契約為 ${result.contractDays}。`);
     }
   }
   return result;
@@ -151,24 +158,24 @@ function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, exc
     effContract: ""
   };
   const rawDiff = Math.floor((c - s) / 86400000) + 1; // 含開工日
-  const ex = +(excludeDays || 0);
-  const cd = +contractDays;
+  const ex = parseFloat(excludeDays || 0);
+  const cd = parseFloat(contractDays);
   if (mode === "extend") {
     // 模式2 總工期延長：累計照算，契約工期加上不計天數
     const accum = rawDiff > 0 ? rawDiff : 0;
     const effContract = cd + ex;
     return {
-      accum: String(accum),
-      remain: String(effContract - accum),
-      effContract: String(effContract)
+      accum: formatDays(accum),
+      remain: formatDays(effContract - accum),
+      effContract: formatDays(effContract)
     };
   }
   // 模式1 限期完工：累計扣掉不計天數，契約工期不變
   const accum = Math.max(rawDiff - ex, 0);
   return {
-    accum: String(accum),
-    remain: String(cd - accum),
-    effContract: String(cd)
+    accum: formatDays(accum),
+    remain: formatDays(cd - accum),
+    effContract: formatDays(cd)
   };
 }
 function Field({
@@ -262,8 +269,11 @@ function App() {
     setImportantFound(/重要記事/.test(rawText));
   }
   const auto = computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode);
-  const accumMismatch = vendorAccum && auto.accum && vendorAccum !== auto.accum;
-  const remainMismatch = vendorRemain && auto.remain && vendorRemain !== auto.remain;
+  
+  // 比較廠商與自算值時，先轉成 Float 比較避免格式字串不一致的問題
+  const accumMismatch = vendorAccum && auto.accum && parseFloat(vendorAccum) !== parseFloat(auto.accum);
+  const remainMismatch = vendorRemain && auto.remain && parseFloat(vendorRemain) !== parseFloat(auto.remain);
+  
   const wd = rocY && rocM && rocD ? rocWeekday(+rocY, +rocM, +rocD) : "";
   function buildOutput() {
     // 以自算值為準（不計天數與模式會影響輸出）；自算不可得時退回廠商值
@@ -272,7 +282,7 @@ function App() {
     const useContract = auto.effContract || contractDays;
     // 工程名稱：只刪開頭的「數字+點」編號，其餘完整保留
     const cleanName = String(projectName).replace(/^\s*\d+\.\s*/, "").trim();
-    const ex = +(excludeDays || 0);
+    const ex = parseFloat(excludeDays || 0);
     const lines = [];
     lines.push(`一、工程名稱：${cleanName}`);
     lines.push(`二、日期：${rocY}/${rocM}/${rocD}(${wd})`);
@@ -282,21 +292,33 @@ function App() {
     lines.push(`(2)累計工期：${useAccum}日曆天`);
     lines.push(`(3)剩餘工期：${useRemain}日曆天`);
     if (ex > 0) {
-      lines.push(`(4)不計工期：${ex}日曆天`);
+      lines.push(`(4)不計工期：${formatDays(ex)}日曆天`);
     }
     lines.push(`五、工程進度`);
     lines.push(`(1)預定進度：${plannedPct}%`);
     lines.push(`(2)實際進度：${actualPct}%`);
     lines.push(`六、本日工作項目`);
     lines.push(workItems);
-    if (samplingFound) {
+
+    // 檢查施工取樣與重要記事內容是否有效（非空且不為"無"）
+    const cleanSampling = (sampling || "").trim();
+    const hasSampling = samplingFound && cleanSampling !== "" && cleanSampling !== "無";
+
+    const cleanImportant = (important || "").trim();
+    const hasImportant = importantFound && cleanImportant !== "" && cleanImportant !== "無";
+
+    let itemIndex = 7;
+    if (hasSampling) {
       lines.push(`七、施工取樣會驗`);
-      lines.push(sampling || "無");
+      lines.push(cleanSampling);
+      itemIndex = 8;
     }
-    if (importantFound) {
-      lines.push(`${samplingFound ? "八" : "七"}、重要記事`);
-      lines.push(important || "無");
+    if (hasImportant) {
+      const cnNum = itemIndex === 7 ? "七" : "八";
+      lines.push(`${cnNum}、重要記事`);
+      lines.push(cleanImportant);
     }
+
     return lines.join("\n");
   }
   const output = projectName || rocY ? buildOutput() : "";
@@ -538,15 +560,15 @@ function App() {
     style: styles.input,
     value: contractDays,
     onChange: e => setContractDays(e.target.value),
-    inputMode: "numeric"
+    inputMode: "decimal"
   })), /*#__PURE__*/React.createElement(Field, {
     label: "不計工期天數"
   }, /*#__PURE__*/React.createElement("input", {
     style: styles.input,
     value: excludeDays,
     onChange: e => setExcludeDays(e.target.value),
-    inputMode: "numeric",
-    placeholder: "無則留空或填 0"
+    inputMode: "decimal",
+    placeholder: "無則留空或填 0，可填小數（例如：0.5）"
   })), /*#__PURE__*/React.createElement(Field, {
     label: "工期計算模式"
   }, /*#__PURE__*/React.createElement("div", {
@@ -578,7 +600,7 @@ function App() {
     },
     value: vendorAccum,
     onChange: e => setVendorAccum(e.target.value),
-    inputMode: "numeric"
+    inputMode: "decimal"
   }), /*#__PURE__*/React.createElement("span", {
     style: styles.tag
   }, "自算"), /*#__PURE__*/React.createElement("span", {
@@ -601,7 +623,7 @@ function App() {
     },
     value: vendorRemain,
     onChange: e => setVendorRemain(e.target.value),
-    inputMode: "numeric"
+    inputMode: "decimal"
   }), /*#__PURE__*/React.createElement("span", {
     style: styles.tag
   }, "自算"), /*#__PURE__*/React.createElement("span", {
@@ -632,7 +654,7 @@ function App() {
     rows: 3,
     value: workItems,
     onChange: e => setWorkItems(e.target.value)
-  })), samplingFound && /*#__PURE__*/React.createElement(Field, {
+  }), samplingFound && /*#__PURE__*/React.createElement(Field, {
     label: "施工取樣會驗"
   }, /*#__PURE__*/React.createElement("textarea", {
     style: styles.textareaSm,
@@ -648,7 +670,7 @@ function App() {
     value: important,
     onChange: e => setImportant(e.target.value),
     placeholder: "無"
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: styles.card
   }, /*#__PURE__*/React.createElement("label", {
     style: styles.label
