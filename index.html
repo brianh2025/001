@@ -125,7 +125,7 @@ function formatDays(num) {
 // 輔助檢查內容是否為空或填寫「無」
 const isEmptyOrNo = (text) => {
   if (!text) return true;
-  const clean = text.replace(/[\s\r\n、，。：:.,\-_ ]/g, "").trim();
+  const clean = text.replace(/[\s\r\n、，。：:.,\-_ \d]/g, "").trim();
   return (
     clean === "" ||
     clean === "無" ||
@@ -184,7 +184,7 @@ function parseReport(text) {
   }
 
   // 3. 天氣
-  m = t.match(/上午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
+  m = t.match(/上午\s*[\/：:\-－]\s*([\u4e00-\u9fa5]+)/);
   if (m) {
     result.weatherAm = m[1].trim();
     result.matched.weatherAm = true;
@@ -196,7 +196,7 @@ function parseReport(text) {
     }
   }
 
-  m = t.match(/下午\s*[\/：:]\s*([\u4e00-\u9fa5]+)/);
+  m = t.match(/下午\s*[\/：:\-－]\s*([\u4e00-\u9fa5]+)/);
   if (m) {
     result.weatherPm = m[1].trim();
     result.matched.weatherPm = true;
@@ -239,6 +239,14 @@ function parseReport(text) {
   if (m) {
     result.excludeDays = m[1];
     result.matched.excludeDays = true;
+  } else {
+    // 廠商以「核准展延 X 天」填報時，視為不計工期並採總工期延長模式
+    m = t.match(/(?:核准展延|展延天數|展延工期)[^\d\n]*(\d+(\.\d+)?)/);
+    if (m) {
+      result.excludeDays = m[1];
+      result.matched.excludeDays = true;
+      result.extendMode = true;
+    }
   }
 
   // 7. 進度
@@ -463,6 +471,7 @@ function App() {
     setVendorAccum(r.accumDays || "");
     setVendorRemain(r.remainDays || "");
     setExcludeDays(r.excludeDays || "");
+    if (r.extendMode) setDurationMode("extend");
     setPlannedPct(r.plannedPct || "");
     setActualPct(r.actualPct || "");
     setWorkItems(r.workItems || "");
@@ -524,7 +533,7 @@ function App() {
   const buildOutput = () => {
     const useAccum = auto.accum || vendorAccum;
     const useRemain = auto.remain || vendorRemain;
-    const useContract = auto.effContract || contractDays;
+    const useContract = contractDays ? formatDays(parseFloat(contractDays)) : "";
 
     const cleanName = String(projectName).replace(/^\s*\d+\.\s*/, "").trim();
     const ex = parseFloat(excludeDays || 0);
@@ -541,11 +550,9 @@ function App() {
     }
 
     lines.push(`(1)契約工期：${useContract}日曆天`);
-    lines.push(`(2)累計工期：${useAccum}日曆天`);
-    lines.push(`(3)剩餘工期：${useRemain}日曆天`);
-    if (ex > 0) {
-      lines.push(`(4)不計工期：${formatDays(ex)}日曆天`);
-    }
+    lines.push(`(2)不計工期：${formatDays(ex)}日曆天`);
+    lines.push(`(3)累計工期：${useAccum}日曆天`);
+    lines.push(`(4)剩餘工期：${useRemain}日曆天`);
     lines.push(`五、工程進度`);
     lines.push(`(1)預定進度：${plannedPct}%`);
     lines.push(`(2)實際進度：${actualPct}%`);
