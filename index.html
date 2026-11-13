@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#0f766e" />
-<title>監造日報提報智慧助手</title>
+<title>監造每週提報助手</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
 
 <!-- 全域錯誤捕捉（避免靜默白屏） -->
@@ -74,12 +74,55 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
   }
+  /* 歡迎詞 */
+  .welcome { transition: opacity 600ms ease; }
+  .welcome.is-fading { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .welcome { transition: none; } }
+
+  /* 操作指引卡 */
+  .guide {
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 14px 16px 15px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.22);
+    animation: guide-in 260ms cubic-bezier(.2,.8,.2,1);
+  }
+  .guide-warn { --accent: #b45309; --accent-soft: #fde68a; }
+  .guide-done { --accent: #047857; --accent-soft: #a7f3d0; }
+  .guide-step { font-size: 13px; color: var(--accent); }
+  .guide-label { font-size: 13px; color: #475569; }
+  .guide-close {
+    width: 28px; height: 28px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #94a3b8;
+  }
+  .guide-close:hover { background: #f1f5f9; color: #475569; }
+  .guide-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .guide-rail { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 10px 0; }
+  .guide-rail span { height: 5px; border-radius: 3px; background: #e2e8f0; transition: background-color 300ms; }
+  .guide-rail span.is-done { background: var(--accent); }
+  .guide-rail span.is-now { background: var(--accent-soft); position: relative; overflow: hidden; }
+  .guide-rail span.is-now::after {
+    content: ""; position: absolute; inset: 0; width: 40%;
+    background: var(--accent); border-radius: 2px;
+    animation: guide-sweep 1.6s ease-in-out infinite;
+  }
+  .guide-text { font-size: 15px; line-height: 1.6; color: #1e293b; margin: 0; animation: guide-fade 220ms ease-out; }
+  @keyframes guide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes guide-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes guide-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .guide, .guide-text, .guide-rail span.is-now::after { animation: none; }
+  }
 </style>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
 <div id="root">
   <div style="padding: 3rem 1rem; text-align: center; color: #475569; font-size: 14px;">
-    ⏳ 監造日報助手載入中，請稍候...
+    ⏳ 監造每週提報助手載入中，請稍候...
   </div>
 </div>
 
@@ -223,12 +266,12 @@ function parseReport(text) {
     result.contractDays = m[1];
     result.matched.contractDays = true;
   }
-  m = t.match(/累計工期[：:\s]*(\d+(\.\d+)?)/);
+  m = t.match(/累計工期[：:\s]*(-?\d+(\.\d+)?)/);
   if (m) {
     result.accumDays = m[1];
     result.matched.accumDays = true;
   }
-  m = t.match(/剩餘工期[：:\s]*(\d+(\.\d+)?)/);
+  m = t.match(/剩餘工期[：:\s]*(-?\d+(\.\d+)?)/);
   if (m) {
     result.remainDays = m[1];
     result.matched.remainDays = true;
@@ -281,16 +324,34 @@ function parseReport(text) {
   }
 
   // 工期邏輯初檢
+  // 以下兩種皆視為一致（不計天數有半天時，廠商捨去或進位成整數亦可）：
+  //   累計 + 剩餘 = 契約工期            （累計已扣除不計）
+  //   累計 + 剩餘 = 契約工期 + 不計工期  （剩餘已含不計）
   if (result.contractDays && result.accumDays && result.remainDays) {
     const sum = parseFloat(result.accumDays) + parseFloat(result.remainDays);
-    if (Math.abs(sum - parseFloat(result.contractDays)) > 0.01) {
-      result.notes.push(`廠商填報數據檢算不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${formatDays(sum)}天，與契約工期(${result.contractDays}天)不合。`);
+    const cd = parseFloat(result.contractDays);
+    const ex = parseFloat(result.excludeDays || 0);
+    const okTotals = [cd, cd + ex, cd + Math.floor(ex), cd + Math.ceil(ex)];
+    if (!okTotals.some(v => Math.abs(sum - v) <= 0.01)) {
+      const exNote = ex > 0 ? `，也不等於契約工期＋不計工期(${formatDays(cd + ex)}天)` : "";
+      result.notes.push(`廠商填報數據檢算不一致：累計(${result.accumDays}) + 剩餘(${result.remainDays}) = ${formatDays(sum)}天，不等於契約工期(${result.contractDays}天)${exNote}。`);
+    }
+
+    // 依廠商填報自動判定計算模式（有不計工期時才需判定）
+    if (ex > 0) {
+      if (Math.abs(sum - cd) <= 0.01) {
+        result.autoMode = "fixed";
+        result.autoModeNote = `累計 + 剩餘 = ${formatDays(sum)}天 = 契約工期，判定為限期完工`;
+      } else if (okTotals.slice(1).some(v => Math.abs(sum - v) <= 0.01)) {
+        result.autoMode = "extend";
+        result.autoModeNote = `累計 + 剩餘 = ${formatDays(sum)}天 = 契約工期＋不計工期，判定為總工期延長`;
+      }
     }
   }
   return result;
 }
 
-function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, mode) {
+function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, mode, stopDays) {
   const emptyRes = { accum: "", remain: "", effContract: "", rawDiff: "", expectedEnd: "", accumFormula: "", remainFormula: "" };
   if (!startY || !rocY || !contractDays) return emptyRes;
 
@@ -301,30 +362,39 @@ function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, exc
 
   const rawDiff = Math.floor((c - s) / 86400000) + 1; // 包含開工當日
   const ex = parseFloat(excludeDays || 0);
+  const stop = parseFloat(stopDays || 0) || 0; // 停工天數：不計入累計工期，竣工日順延
+  const stopTxt = stop > 0 ? ` − 停工 ${formatDays(stop)}` : "";
   const cd = parseFloat(contractDays);
 
   let accum, remain, effContract, accumFormula, remainFormula;
 
   if (mode === "extend") {
     // 總工期延長模式：累計天數照常照算，契約工期延長
-    accum = rawDiff > 0 ? rawDiff : 0;
+    accum = Math.max(rawDiff - stop, 0);
     effContract = cd + ex;
     remain = effContract - accum;
 
-    accumFormula = `開工至今天數(${rawDiff}天) = ${formatDays(accum)}天`;
-    remainFormula = `[契約(${formatDays(cd)}) + 不計(${formatDays(ex)})] - 累計(${formatDays(accum)}) = ${formatDays(remain)}天`;
+    accumFormula = `${rawDiff}${stopTxt} = ${formatDays(accum)} 天`;
+    remainFormula = `契約 ${formatDays(cd)} + 不計 ${formatDays(ex)} − 累計 ${formatDays(accum)} = ${formatDays(remain)} 天`;
   } else {
     // 限期完工模式：契約不變，累計扣除不計天數
-    accum = Math.max(rawDiff - ex, 0);
+    accum = Math.max(rawDiff - ex - stop, 0);
     effContract = cd;
     remain = cd - accum;
 
-    accumFormula = `開工至今(${rawDiff}天) - 不計(${formatDays(ex)}天) = ${formatDays(accum)}天`;
-    remainFormula = `契約(${formatDays(cd)}天) - 累計(${formatDays(accum)}天) = ${formatDays(remain)}天`;
+    accumFormula = `${rawDiff} − 不計 ${formatDays(ex)}${stopTxt} = ${formatDays(accum)} 天`;
+    remainFormula = `契約 ${formatDays(cd)} − 累計 ${formatDays(accum)} = ${formatDays(remain)} 天`;
   }
 
-  // 預定竣工日計算 (開工日 + 契約工期 + 不計工期 - 1天)
-  const totalDurationForEnd = cd + ex;
+  // 剩餘工期有小數（如 0.5 天）時一律捨去
+  if (remain !== Math.floor(remain)) {
+    const rawRemain = remain;
+    remain = Math.floor(remain);
+    remainFormula = remainFormula.replace(/= [^=]*天$/, `= ${formatDays(rawRemain)} → ${formatDays(remain)} 天（捨去）`);
+  }
+
+  // 預定竣工日計算 (開工日 + 契約工期 + 不計工期 + 停工天數 - 1天)
+  const totalDurationForEnd = cd + ex + stop;
   const end = new Date(s.getTime());
   end.setDate(end.getDate() + Math.ceil(totalDurationForEnd) - 1);
 
@@ -344,6 +414,22 @@ function computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, exc
   };
 }
 
+function CheckMark({ ok, expected }) {
+  if (ok) {
+    return (
+      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700" title="與自算相符" aria-label="與自算相符">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-rose-600">
+      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-100" aria-hidden="true">✕</span>
+      {expected !== "" ? `應為 ${expected} 天` : "無法自算"}
+    </span>
+  );
+}
+
 function App() {
   const [projects, setProjects] = useState(DEFAULT_PROJECTS);
   const [records, setRecords] = useState([]);
@@ -352,13 +438,36 @@ function App() {
   const [rawText, setRawText] = useState("");
   const [parsed, setParsed] = useState(null);
 
+  // 歡迎詞：開啟頁面時顯示一次，幾秒後淡出消失
+  const hour = new Date().getHours();
+  const greeting = hour < 11 ? "早安" : hour < 14 ? "午安" : hour < 18 ? "下午好" : "晚安";
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [welcomeFading, setWelcomeFading] = useState(false);
+  useEffect(() => {
+    const t1 = setTimeout(() => setWelcomeFading(true), 4000);
+    const t2 = setTimeout(() => setShowWelcome(false), 4600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  const block2Ref = useRef(null);
+  const block3Ref = useRef(null);
+  const [infoModal, setInfoModal] = useState(false);
+  const [saveModal, setSaveModal] = useState(false);
+  const [savedThisReport, setSavedThisReport] = useState(false);
+
+  // 解析後自動捲到區塊 2
+  useEffect(() => {
+    if (parsed && block2Ref.current) {
+      setTimeout(() => block2Ref.current && block2Ref.current.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    }
+  }, [parsed]);
+
   // 表單核心狀態
   const [projectName, setProjectName] = useState("");
   const [rocY, setRocY] = useState("");
   const [rocM, setRocM] = useState("");
   const [rocD, setRocD] = useState("");
-  const [weatherAm, setWeatherAm] = useState("晴");
-  const [weatherPm, setWeatherPm] = useState("晴");
+  const [weatherAm, setWeatherAm] = useState("");
+  const [weatherPm, setWeatherPm] = useState("");
   const [startY, setStartY] = useState("");
   const [startM, setStartM] = useState("");
   const [startD, setStartD] = useState("");
@@ -366,7 +475,9 @@ function App() {
   const [vendorAccum, setVendorAccum] = useState("");
   const [vendorRemain, setVendorRemain] = useState("");
   const [excludeDays, setExcludeDays] = useState("");
+  const [stopDays, setStopDays] = useState("");
   const [durationMode, setDurationMode] = useState("fixed");
+  const [autoModeNote, setAutoModeNote] = useState("");
   const [plannedPct, setPlannedPct] = useState("");
   const [actualPct, setActualPct] = useState("");
   const [workItems, setWorkItems] = useState("");
@@ -417,8 +528,8 @@ function App() {
     setRocY("");
     setRocM("");
     setRocD("");
-    setWeatherAm("晴");
-    setWeatherPm("晴");
+    setWeatherAm("");
+    setWeatherPm("");
     setStartY("");
     setStartM("");
     setStartD("");
@@ -426,6 +537,8 @@ function App() {
     setVendorAccum("");
     setVendorRemain("");
     setExcludeDays("");
+    setStopDays("");
+    setAutoModeNote("");
     setPlannedPct("");
     setActualPct("");
     setWorkItems("");
@@ -456,8 +569,8 @@ function App() {
       setRocY(""); setRocM(""); setRocD("");
     }
 
-    setWeatherAm(r.weatherAm && WEATHER_OPTIONS.includes(r.weatherAm) ? r.weatherAm : "晴");
-    setWeatherPm(r.weatherPm && WEATHER_OPTIONS.includes(r.weatherPm) ? r.weatherPm : "晴");
+    setWeatherAm(r.weatherAm || "");
+    setWeatherPm(r.weatherPm || "");
 
     if (r.matched.start) {
       setStartY(r.startY);
@@ -471,7 +584,15 @@ function App() {
     setVendorAccum(r.accumDays || "");
     setVendorRemain(r.remainDays || "");
     setExcludeDays(r.excludeDays || "");
-    if (r.extendMode) setDurationMode("extend");
+    if (r.autoMode) {
+      setDurationMode(r.autoMode);
+      setAutoModeNote(r.autoModeNote);
+    } else if (r.extendMode) {
+      setDurationMode("extend");
+      setAutoModeNote("廠商填報核准展延，判定為總工期延長");
+    } else {
+      setAutoModeNote("");
+    }
     setPlannedPct(r.plannedPct || "");
     setActualPct(r.actualPct || "");
     setWorkItems(r.workItems || "");
@@ -495,17 +616,19 @@ function App() {
 
   const doParse = () => {
     if (!rawText.trim()) {
-      alert("請先貼上日報文字！");
+      alert("請先貼上廠商進度回報文字！");
       return;
     }
     const r = parseReport(rawText);
     applyParsedResults(r);
+    setSavedThisReport(false);
+    if (!r.matched.date || !r.weatherAm || !r.weatherPm) setInfoModal(true);
   };
 
   // 執行自算
   const auto = useMemo(() => {
-    return computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode);
-  }, [startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode]);
+    return computeDays(startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode, stopDays);
+  }, [startY, startM, startD, rocY, rocM, rocD, contractDays, excludeDays, durationMode, stopDays]);
 
   // 比對廠商值與自算值是否產生不一致
   const accumMismatch = useMemo(() => {
@@ -522,6 +645,22 @@ function App() {
     }
     return "";
   }, [rocY, rocM, rocD]);
+
+  // 區塊 2 檢核：全部通過才能複製回報
+  const copyBlockers = useMemo(() => {
+    const list = [];
+    if (!projectName) list.push("尚未選擇工程名稱");
+    if (!(rocY && rocM && rocD)) list.push("提報日期未填");
+    if (!weatherAm || !weatherPm) list.push("天氣未填");
+    if (auto.accum === "" || auto.remain === "") list.push("開工日期或契約工期不足，無法自算工期");
+    else {
+      if (vendorAccum === "" || accumMismatch) list.push("累計工期與自算不合");
+      if (vendorRemain === "" || remainMismatch) list.push("剩餘工期與自算不合");
+    }
+    return list;
+  }, [projectName, rocY, rocM, rocD, weatherAm, weatherPm, auto, vendorAccum, vendorRemain, accumMismatch, remainMismatch]);
+  const durationOk = auto.accum !== "" && auto.remain !== "" && vendorAccum !== "" && vendorRemain !== "" && !accumMismatch && !remainMismatch;
+  const canCopy = copyBlockers.length === 0;
 
   // 一鍵修復：將廠商申報數值同步為系統自算數值
   const applyAutoValues = () => {
@@ -590,17 +729,19 @@ function App() {
   }, [projectName, rocY, rocM, rocD, wd, weatherAm, weatherPm, startY, startM, startD, contractDays, excludeDays, durationMode, vendorAccum, vendorRemain, auto, plannedPct, actualPct, workItems, sampling, samplingFound, important, importantFound]);
 
   // 複製文字功能
-  const copyText = (txt) => {
+  const copyText = (txt, askSave) => {
+    const done = () => {
+      showCopyToast();
+      if (askSave && !savedThisReport) setSaveModal(true);
+    };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt).then(() => {
-        showCopyToast();
-      }).catch(() => fallbackCopy(txt));
+      navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopy(txt, done));
     } else {
-      fallbackCopy(txt);
+      fallbackCopy(txt, done);
     }
   };
 
-  const fallbackCopy = (txt) => {
+  const fallbackCopy = (txt, done) => {
     const ta = document.createElement("textarea");
     ta.value = txt;
     ta.style.position = "fixed";
@@ -610,7 +751,7 @@ function App() {
     ta.select();
     try {
       document.execCommand("copy");
-      showCopyToast();
+      (done || showCopyToast)();
     } catch (e) {
       alert("複製失敗，請手動全選複製");
     }
@@ -623,7 +764,7 @@ function App() {
   };
 
   // 保存歷史紀錄
-  const handleSaveRecord = () => {
+  const handleSaveRecord = (silent) => {
     if (!output) {
       alert("目前尚無可保存的產出內容！");
       return;
@@ -638,7 +779,8 @@ function App() {
       savedAt: new Date().toLocaleString("zh-TW")
     };
     saveRecords([rec, ...records]);
-    alert("本期提報紀錄已保存！可在「歷史紀錄」分頁查看與匯出。");
+    setSavedThisReport(true);
+    if (silent !== true) alert("本期提報紀錄已保存！可在「歷史紀錄」分頁查看與匯出。");
   };
 
   // 刪除歷史紀錄與彈窗
@@ -763,29 +905,86 @@ function App() {
     }
   };
 
+  // 操作指引卡：依目前進度顯示下一步（四個步驟：貼上 → 解析 → 核對 → 複製）
+  const GUIDE_STEPS = ["貼上進度回報", "自動解析", "核對工期", "複製回報"];
+  const hint = useMemo(() => {
+    if (tab !== "form") return null;
+    if (copied) return { step: 4, tone: "done", text: "已複製完成，可以直接貼到 LINE 群組了。" };
+    if (!rawText.trim()) return { step: 1, tone: "info", text: "在上方的輸入框，貼上廠商傳來的進度回報全文。" };
+    if (!parsed) return { step: 2, tone: "info", text: "按下綠色按鈕「自動解析抓取資料」，系統會自動填好各欄位。" };
+    if (!(rocY && rocM && rocD) || !weatherAm || !weatherPm) return { step: 3, tone: "warn", text: "回報裡找不到日期或天氣，請按「修改填報日期／天氣」補上。" };
+    if (parsed.notes.length > 0 && (accumMismatch || remainMismatch)) return { step: 3, tone: "warn", text: "廠商填的累計和剩餘工期加起來對不上，請看區塊 2 的黃色提醒。" };
+    if (accumMismatch || remainMismatch) return { step: 3, tone: "warn", text: "累計或剩餘工期跟系統算的不一樣，請修改，或按「一鍵修正為自算值」。" };
+    if (!canCopy) return { step: 3, tone: "warn", text: "區塊 2 還有欄位沒處理好，要處理的項目列在區塊 3。" };
+    return { step: 3, tone: "info", text: "工期檢核都通過了，往下按「一鍵複製 LINE 回報」。" };
+  }, [tab, copied, rawText, parsed, accumMismatch, remainMismatch, rocY, rocM, rocD, weatherAm, weatherPm, canCopy]);
+  const hintKey = hint ? `${hint.step}-${hint.tone}-${hint.text}` : "";
+  const [hintClosed, setHintClosed] = useState("");
+
+  // 預設位置：寬螢幕放在內容欄右側留白的底部（完全不遮內容）；窄螢幕貼齊畫面底部
+  const [vw, setVw] = useState(window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const GUIDE_W = 340;
+  const CONTENT_W = 672;
+  const gutter = (vw - CONTENT_W) / 2;
+  const guideInGutter = gutter >= GUIDE_W + 36;
+  const guideDefaultStyle = guideInGutter
+    ? { left: (vw + CONTENT_W) / 2 + 20, bottom: 24, width: GUIDE_W }
+    : { left: 12, right: 12, bottom: "calc(12px + env(safe-area-inset-bottom))" };
+
+  // 拖曳（位置相對視窗，捲動頁面時留在原處）
+  const [bubblePos, setBubblePos] = useState(null);
+  const dragRef = useRef(null);
+  const bubbleRef = useRef(null);
+  const onBubbleDown = (e) => {
+    if (e.target.closest("button")) return;
+    const r = bubbleRef.current.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onBubbleMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const x = Math.min(Math.max(e.clientX - d.dx, 8), window.innerWidth - d.w - 8);
+    const y = Math.min(Math.max(e.clientY - d.dy, 8), window.innerHeight - d.h - 8);
+    setBubblePos({ x, y, w: d.w });
+  };
+  const onBubbleUp = () => { dragRef.current = null; };
+  const showGuide = hint && hintClosed !== hintKey;
+
   // 生成下拉選項數值
   const yearOpts = Array.from({ length: 11 }, (_, i) => 114 + i);
   const monthOpts = Array.from({ length: 12 }, (_, i) => i + 1);
   const dayOpts = Array.from({ length: 31 }, (_, i) => i + 1);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
+    <div className="max-w-2xl mx-auto px-4 py-3 md:py-5">
 
       {/* 標頭頂部欄 */}
-      <header className="mb-8 text-center">
-        <div className="inline-flex items-center justify-center bg-brand-50 text-brand-700 w-14 h-14 rounded-2xl mb-3 shadow-sm border border-brand-100">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-          </svg>
+      <header className="mb-3">
+        <div className="flex items-center justify-center gap-2.5">
+          <span className="inline-flex items-center justify-center bg-brand-50 text-brand-700 w-9 h-9 rounded-xl border border-brand-100 shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+          </span>
+          <h1 className="text-xl md:text-2xl font-medium text-slate-900 tracking-tight m-0">監造每週提報助手</h1>
         </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">監造日報提報智慧助手</h1>
-        <p className="text-sm text-slate-500 mt-1.5">貼上廠商日報自動檢算工期，一鍵生成 LINE 回報格式</p>
+        {showWelcome && (
+          <p className={`welcome text-sm text-slate-600 text-center mt-2 mb-0 ${welcomeFading ? "is-fading" : ""}`}>
+            {greeting}！貼上廠商的進度回報，我會幫你檢算工期、整理成 LINE 回報。
+          </p>
+        )}
       </header>
 
       {/* 分頁 Tab */}
-      <div className="flex p-1.5 bg-slate-200/70 rounded-xl mb-6 gap-1">
+      <div className="flex p-1 bg-slate-200/70 rounded-xl mb-3 gap-1">
         <button
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-sm font-medium transition-all ${
             tab === "form" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
           }`}
           onClick={() => setTab("form")}
@@ -796,7 +995,7 @@ function App() {
           解析與申報
         </button>
         <button
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-sm font-medium transition-all ${
             tab === "history" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
           }`}
           onClick={() => setTab("history")}
@@ -807,7 +1006,7 @@ function App() {
           歷史紀錄 ({records.length})
         </button>
         <button
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-sm font-medium transition-all ${
             tab === "config" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/40"
           }`}
           onClick={() => setTab("config")}
@@ -822,20 +1021,20 @@ function App() {
 
       {/* 1. 解析與申報主分頁 */}
       {tab === "form" && (
-        <div className="space-y-6">
+        <div className="space-y-3">
 
           {/* 輸入區卡片 */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-            <div className="flex justify-between items-center mb-3">
-              <label className="block text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-3 shadow-sm">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-slate-800 font-medium text-[15px] flex items-center gap-1.5">
                 <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">1</span>
-                貼上廠商日報原始文字
+                貼上廠商進度回報原始文字
               </label>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleClearAllFields}
-                  className="text-xs text-rose-700 hover:text-rose-900 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-colors border border-rose-100"
+                  className="text-xs text-rose-700 hover:text-rose-900 font-medium bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-colors border border-rose-100"
                 >
                   🗑️ 清空內容
                 </button>
@@ -843,16 +1042,16 @@ function App() {
             </div>
 
             <textarea
-              className="w-full border border-slate-200 rounded-xl p-3.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all font-mono text-sm leading-relaxed"
+              className="w-full border border-slate-200 rounded-xl p-2.5 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all font-mono text-sm leading-relaxed"
               rows={7}
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              placeholder="貼上施工日報格式，例如：&#13;工程名稱：...&#13;日期：115/07/16&#13;天氣：上午：晴 下午：晴..."
+              placeholder="貼上廠商進度回報，例如：&#13;工程名稱：...&#13;日期：115/07/16&#13;天氣：上午：晴 下午：晴..."
             />
 
             <button
               onClick={doParse}
-              className="w-full mt-3 bg-brand-700 hover:bg-brand-800 active:scale-[0.99] text-white py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+              className="w-full mt-2 bg-brand-700 hover:bg-brand-800 active:scale-[0.99] text-white py-2 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 shadow-sm"
             >
               <span>自動解析抓取資料</span>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -863,20 +1062,21 @@ function App() {
 
           {/* 解析結果核對 */}
           {parsed && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-5">
+            <div ref={block2Ref} className="scroll-mt-4 bg-white rounded-2xl border border-slate-200/80 px-4 pt-3 pb-4 shadow-sm space-y-3 text-sm text-slate-700">
 
-              <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-                <label className="text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5">
+              {/* 版面基準：所有列共用「左欄／右欄」兩條起始線（md 以上 grid-cols-2 gap-x-6） */}
+
+              <div className="border-b border-slate-100 pb-2 flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
+                <span className="text-slate-800 text-[15px] font-medium flex items-center gap-1.5">
                   <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">2</span>
                   核對並修正欄位
-                </label>
-                <span className="text-xs text-slate-400 font-medium">可手動調整以下欄位，輸出會即時同步</span>
+                </span>
               </div>
 
               {/* 警示盒 */}
               {parsed.notes.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl text-xs space-y-1.5 font-medium shadow-inner">
-                  <span className="font-bold block text-sm mb-1 text-amber-900">⚠️ 解析注意提醒：</span>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-2.5 rounded-lg text-xs space-y-1">
+                  <span className="block text-amber-900">⚠️ 解析注意提醒：</span>
                   {parsed.notes.map((n, i) => (
                     <div key={i} className="flex items-start gap-1">
                       <span className="text-amber-600">▪</span>
@@ -886,339 +1086,232 @@ function App() {
                 </div>
               )}
 
-              {/* 1. 工程名稱 */}
-              <div className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">工程名稱</span>
-                <select
-                  className="w-full border border-slate-200 rounded-xl p-2.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 text-sm font-medium"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
+              {/* 列 1：工程名稱（全寬） */}
+              <div>
+                <div className="relative w-full border border-slate-200 rounded-lg bg-slate-50 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <div className="pl-2 pr-7 py-1.5 text-sm text-slate-800 break-words">
+                    {projectName || <span className="text-slate-400">— 請選擇或輸入工程 —</span>}
+                  </div>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">▾</span>
+                  <select
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    aria-label="工程名稱"
+                  >
+                    <option value="">— 請選擇或輸入工程 —</option>
+                    {projects.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                    {projectName && !projects.includes(projectName) && (
+                      <option value={projectName}>{projectName} (手動解析)</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* 列 2：填報日與天氣（靠左一行）＋修改按鈕（靠右） */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-h-8 text-sm text-slate-600">
+                <span>
+                  填報日：{rocY && rocM && rocD ? `${rocY}年${rocM}月${rocD}日(${wd})` : <span className="text-rose-600">未填</span>}
+                  <span className="ml-3">上午{weatherAm || <span className="text-rose-600">未填</span>}/下午{weatherPm || <span className="text-rose-600">未填</span>}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setInfoModal(true)}
+                  className="ml-auto border border-brand-700 text-brand-700 hover:bg-brand-50 text-xs h-7 px-2.5 rounded-md transition-colors shrink-0 whitespace-nowrap"
                 >
-                  <option value="">— 請選擇或輸入工程 —</option>
-                  {projects.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                  {projectName && !projects.includes(projectName) && (
-                    <option value={projectName}>{projectName} (手動解析)</option>
-                  )}
-                </select>
+                  修改填報日期／天氣
+                </button>
               </div>
 
-              {/* 2. 報表日期 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">提報日期 (民國)</span>
-                  <div className="flex gap-2 items-center">
-                    <select
-                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
-                      value={rocY}
-                      onChange={(e) => setRocY(e.target.value)}
-                    >
-                      <option value="">年</option>
-                      {yearOpts.map(y => <option key={y} value={y}>{y} 年</option>)}
-                    </select>
-                    <select
-                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
-                      value={rocM}
-                      onChange={(e) => setRocM(e.target.value)}
-                    >
-                      <option value="">月</option>
-                      {monthOpts.map(m => <option key={m} value={m}>{m} 月</option>)}
-                    </select>
-                    <select
-                      className="flex-1 border border-slate-200 rounded-xl p-2 text-sm"
-                      value={rocD}
-                      onChange={(e) => setRocD(e.target.value)}
-                    >
-                      <option value="">日</option>
-                      {dayOpts.map(d => <option key={d} value={d}>{d} 日</option>)}
-                    </select>
-                    {wd && <span className="text-sm font-extrabold text-brand-700 whitespace-nowrap bg-brand-50 px-2.5 py-1.5 rounded-lg border border-brand-100">週{wd}</span>}
-                  </div>
-                </div>
-
-                {/* 天氣 */}
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">天氣概況</span>
-                  <div className="flex gap-2 items-center">
-                    <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
-                      <span className="text-xs text-slate-400 font-bold pr-2 border-r border-slate-200">上午</span>
-                      <select
-                        className="w-full bg-transparent p-2 text-sm focus:outline-none"
-                        value={weatherAm}
-                        onChange={(e) => setWeatherAm(e.target.value)}
-                      >
-                        {WEATHER_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
-                      </select>
+              {/* 列 3：開工日、契約、不計、停工（左欄）／計算模式（右欄） */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 border-t border-slate-100 pt-3">
+                <div className="space-y-1">
+                  <div className="flex items-end gap-1.5">
+                    <div className="space-y-1 shrink-0">
+                      <span className="text-xs text-slate-500 block">開工日期</span>
+                      <div className="flex items-center gap-0.5 h-8">
+                        <input className="w-10 h-8 border border-slate-200 rounded-md px-0 text-sm text-center" value={startY} onChange={(e) => setStartY(e.target.value)} placeholder="年" inputMode="numeric" aria-label="開工年" />
+                        <span className="text-slate-400 text-xs">/</span>
+                        <input className="w-7 h-8 border border-slate-200 rounded-md px-0 text-sm text-center" value={startM} onChange={(e) => setStartM(e.target.value)} placeholder="月" inputMode="numeric" aria-label="開工月" />
+                        <span className="text-slate-400 text-xs">/</span>
+                        <input className="w-7 h-8 border border-slate-200 rounded-md px-0 text-sm text-center" value={startD} onChange={(e) => setStartD(e.target.value)} placeholder="日" inputMode="numeric" aria-label="開工日" />
+                      </div>
                     </div>
-                    <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2">
-                      <span className="text-xs text-slate-400 font-bold pr-2 border-r border-slate-200">下午</span>
-                      <select
-                        className="w-full bg-transparent p-2 text-sm focus:outline-none"
-                        value={weatherPm}
-                        onChange={(e) => setWeatherPm(e.target.value)}
-                      >
-                        {WEATHER_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
-                      </select>
+                    <div className="space-y-1 shrink-0">
+                      <span className="text-xs text-slate-500 block">契約工期</span>
+                      <div className="relative w-[52px]">
+                        <input className="w-full h-8 border border-slate-200 rounded-md pl-0.5 pr-4 text-sm text-center" value={contractDays} onChange={(e) => setContractDays(e.target.value)} inputMode="decimal" aria-label="契約工期（天）" />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">天</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1 shrink-0">
+                      <span className="text-xs text-slate-500 block">不計工期</span>
+                      <div className="relative w-[52px]">
+                        <input className="w-full h-8 border border-slate-200 rounded-md pl-0.5 pr-4 text-sm text-center" value={excludeDays} onChange={(e) => setExcludeDays(e.target.value)} placeholder="0" inputMode="decimal" aria-label="不計工期（天）" />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">天</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1 shrink-0">
+                      <span className="text-xs text-slate-500 block">停工天數</span>
+                      <div className="relative w-[52px]">
+                        <input className="w-full h-8 border border-slate-200 rounded-md pl-0.5 pr-4 text-sm text-center" value={stopDays} onChange={(e) => setStopDays(e.target.value)} placeholder="0" inputMode="decimal" aria-label="停工天數（天，不顯示於回報）" />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">天</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* 3. 開工日與契約工期 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">本案開工日期 (民國)</span>
-                  <div className="flex gap-2">
-                    <input
-                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
-                      value={startY}
-                      onChange={(e) => setStartY(e.target.value)}
-                      placeholder="年"
-                      inputMode="numeric"
-                    />
-                    <input
-                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
-                      value={startM}
-                      onChange={(e) => setStartM(e.target.value)}
-                      placeholder="月"
-                      inputMode="numeric"
-                    />
-                    <input
-                      className="w-full border border-slate-200 rounded-xl p-2 text-sm text-center focus:ring-brand-500/20 focus:border-brand-500"
-                      value={startD}
-                      onChange={(e) => setStartD(e.target.value)}
-                      placeholder="日"
-                      inputMode="numeric"
-                    />
-                  </div>
+                  <p className="text-[11px] text-slate-400 m-0">停工天數只參與計算，不顯示於回報。</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">契約工期 (日曆天)</span>
-                  <input
-                    type="number"
-                    className="w-full border border-slate-200 rounded-xl p-2 text-sm focus:ring-brand-500/20 focus:border-brand-500"
-                    value={contractDays}
-                    onChange={(e) => setContractDays(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-              </div>
-
-              {/* 4. 不計工期與計算模式 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">不計工期天數</span>
-                  <input
-                    type="text"
-                    className="w-full border border-slate-200 rounded-xl p-2 text-sm focus:ring-brand-500/20 focus:border-brand-500"
-                    value={excludeDays}
-                    onChange={(e) => setExcludeDays(e.target.value)}
-                    placeholder="無則不填或 0，可填小數"
-                    inputMode="decimal"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">工期完工計算模式</span>
-                  <div className="flex rounded-xl p-0.5 bg-slate-100 border border-slate-200">
+                <div className="space-y-1">
+                  <span className="text-xs text-slate-500 block">計算模式</span>
+                  <div className="flex h-8 rounded-md p-0.5 bg-slate-100 border border-slate-200">
                     <button
                       type="button"
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                        durationMode === "fixed" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                      }`}
-                      onClick={() => setDurationMode("fixed")}
+                      className={`flex-1 text-xs rounded transition-all ${durationMode === "fixed" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                      onClick={() => { setDurationMode("fixed"); setAutoModeNote(""); }}
                     >
                       限期完工
                     </button>
                     <button
                       type="button"
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                        durationMode === "extend" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                      }`}
-                      onClick={() => setDurationMode("extend")}
+                      className={`flex-1 text-xs rounded transition-all ${durationMode === "extend" ? "bg-white text-brand-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                      onClick={() => { setDurationMode("extend"); setAutoModeNote(""); }}
                     >
                       總工期延長
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400">
-                    {durationMode === "fixed" ? "ℹ 累計工期扣除不計天數，契約工期維持不變" : "ℹ 累計工期照算，不計天數直接加進總契約工期"}
+                  <p className="text-[11px] text-slate-400 m-0">
+                    {durationMode === "fixed" ? "累計扣除不計天數，契約工期不變" : "累計照算，不計天數加進總工期"}
                   </p>
                 </div>
               </div>
 
-              {/* 5. 智慧工期計算與廠商值比對 */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-extrabold text-slate-600 block">工期智能檢算比對區</span>
-                  {auto.expectedEnd && (
-                    <span className="text-xs font-bold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-md border border-brand-200 shadow-sm">
-                      預定竣工日: {auto.expectedEnd}
-                    </span>
-                  )}
+              {/* 列 4：工期計算區（滿版色帶，內容沿用左右欄基準線） */}
+              <div className={`-mx-4 px-4 py-3 border-y ${durationOk ? "bg-slate-50 border-slate-200" : "bg-rose-50/50 border-rose-200"}`}>
+                <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-3 md:grid-flow-col gap-x-6 gap-y-1.5 text-sm text-slate-600">
+                  {/* 左欄 */}
+                  <div className="flex items-center h-8">
+                    <span className="w-[5rem] shrink-0">預定竣工日</span>
+                    <span>{auto.expectedEnd || "—"}</span>
+                  </div>
+                  <div className="flex items-center h-8 gap-2">
+                    <span className="w-[5rem] shrink-0 -mr-2">累計工期</span>
+                    <input
+                      className={`w-14 h-8 border rounded-md px-0.5 text-sm text-center bg-white ${accumMismatch ? "border-rose-300 text-rose-600" : "border-slate-200 text-slate-700"}`}
+                      value={vendorAccum}
+                      onChange={(e) => setVendorAccum(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="廠商申報累計工期"
+                    />
+                    <span className="-ml-1">天</span>
+                    <CheckMark ok={vendorAccum !== "" && auto.accum !== "" && !accumMismatch} expected={auto.accum} />
+                  </div>
+                  <div className="flex items-center h-8 gap-2">
+                    <span className="w-[5rem] shrink-0 -mr-2">剩餘工期</span>
+                    <input
+                      className={`w-14 h-8 border rounded-md px-0.5 text-sm text-center bg-white ${remainMismatch ? "border-rose-300 text-rose-600" : "border-slate-200 text-slate-700"}`}
+                      value={vendorRemain}
+                      onChange={(e) => setVendorRemain(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="廠商申報剩餘工期"
+                    />
+                    <span className="-ml-1">天</span>
+                    <CheckMark ok={vendorRemain !== "" && auto.remain !== "" && !remainMismatch} expected={auto.remain} />
+                  </div>
+                  {/* 右欄 */}
+                  <div className="flex items-center min-h-8 border-t md:border-t-0 border-slate-200 pt-2 md:pt-0 mt-1 md:mt-0">
+                    <span className="w-[5rem] shrink-0">自開工至今</span>
+                    <span>{auto.rawDiff !== "" ? `${auto.rawDiff} 天` : "—"}</span>
+                  </div>
+                  <div className="flex items-center min-h-8">
+                    <span className="w-[5rem] shrink-0">累計算式</span>
+                    <span className="md:whitespace-nowrap">{auto.accumFormula || "—"}</span>
+                  </div>
+                  <div className="flex items-center min-h-8">
+                    <span className="w-[5rem] shrink-0">剩餘算式</span>
+                    <span className="md:whitespace-nowrap">{auto.remainFormula || "—"}</span>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-
-                  {/* 累計工期 */}
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-slate-500 block">累計工期</span>
-                    <div className="flex gap-1.5 items-center bg-white border border-slate-200 rounded-xl p-2">
-                      <div className="flex-1">
-                        <span className="text-[10px] text-slate-400 block font-bold">廠商申報</span>
-                        <input
-                          type="text"
-                          className={`w-full bg-transparent font-mono text-sm font-semibold focus:outline-none ${accumMismatch ? "text-rose-600 font-extrabold" : "text-slate-700"}`}
-                          value={vendorAccum}
-                          onChange={(e) => setVendorAccum(e.target.value)}
-                          inputMode="decimal"
-                        />
-                      </div>
-                      <div className="border-l border-slate-100 pl-2">
-                        <span className="text-[10px] text-slate-400 block font-bold">系統自算</span>
-                        <span className={`text-sm font-mono font-extrabold block ${accumMismatch ? "text-rose-600" : "text-slate-700"}`}>
-                          {auto.accum || "—"}
-                        </span>
-                      </div>
+                {(autoModeNote || accumMismatch || remainMismatch) && (
+                  <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-t mt-2 pt-2 ${durationOk ? "border-slate-200" : "border-rose-200"}`}>
+                    <div className="space-y-0.5 md:whitespace-nowrap">
+                      {autoModeNote && <span className="block text-xs text-brand-700">✓ 已自動選擇：{autoModeNote}</span>}
+                      {(accumMismatch || remainMismatch) && <span className="block text-xs text-rose-700">申報值與自算不合，工期正確後才能複製回報。</span>}
                     </div>
-                  </div>
-
-                  {/* 剩餘工期 */}
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-slate-500 block">剩餘工期</span>
-                    <div className="flex gap-1.5 items-center bg-white border border-slate-200 rounded-xl p-2">
-                      <div className="flex-1">
-                        <span className="text-[10px] text-slate-400 block font-bold">廠商申報</span>
-                        <input
-                          type="text"
-                          className={`w-full bg-transparent font-mono text-sm font-semibold focus:outline-none ${remainMismatch ? "text-rose-600 font-extrabold" : "text-slate-700"}`}
-                          value={vendorRemain}
-                          onChange={(e) => setVendorRemain(e.target.value)}
-                          inputMode="decimal"
-                        />
-                      </div>
-                      <div className="border-l border-slate-100 pl-2">
-                        <span className="text-[10px] text-slate-400 block font-bold">系統自算</span>
-                        <span className={`text-sm font-mono font-extrabold block ${remainMismatch ? "text-rose-600" : "text-slate-700"}`}>
-                          {auto.remain || "—"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* 工期檢核明細面板 */}
-                {auto.rawDiff !== "" && (
-                  <div className="bg-white border border-slate-200 rounded-xl p-3.5 text-[11.5px] text-slate-600 space-y-2 font-mono shadow-sm mt-2">
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
-                      <span className="font-bold text-slate-500">自開工日至今之天數:</span>
-                      <span className="text-brand-700 font-bold bg-brand-50 px-2 py-0.5 rounded">{auto.rawDiff} 天</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold text-slate-500 shrink-0">累積工期算式:</span>
-                      <span className="text-right">{auto.accumFormula}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold text-slate-500 shrink-0">剩餘工期算式:</span>
-                      <span className="text-right">{auto.remainFormula}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* 警示與快速修正 */}
-                {(accumMismatch || remainMismatch) && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-red-800 text-xs font-extrabold block">⚠️ 檢測到申報與自算數據不合</span>
-                      <p className="text-[11px] text-red-600">系統依您設定的參數自算應為 <b>累計 {auto.accum} 天 / 剩餘 {auto.remain} 天</b></p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={applyAutoValues}
-                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-colors shadow-sm self-end md:self-center shrink-0"
-                    >
-                      🔧 一鍵修正為自算值
-                    </button>
+                    {(accumMismatch || remainMismatch) && (
+                      <button
+                        type="button"
+                        onClick={applyAutoValues}
+                        className="ml-auto h-8 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-xs transition-colors whitespace-nowrap"
+                      >
+                        一鍵修正為自算值
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* 6. 進度填寫 */}
-              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">預定進度 (%)</span>
-                  <input
-                    type="text"
-                    className="w-full border border-slate-200 rounded-xl p-2 text-sm font-mono focus:ring-brand-500/20 focus:border-brand-500"
-                    value={plannedPct}
-                    onChange={(e) => setPlannedPct(e.target.value)}
-                    inputMode="decimal"
-                  />
+              {/* 列 5：進度（左欄）／一鍵生成訊息（右欄） */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 items-start">
+                <div className="space-y-2">
+                  <div className="flex items-end gap-2">
+                    <div className="space-y-1 w-24">
+                      <span className="text-xs text-slate-500 block">預定進度 (%)</span>
+                      <input className="w-full h-8 border border-slate-200 rounded-md px-1 text-sm text-center" value={plannedPct} onChange={(e) => setPlannedPct(e.target.value)} inputMode="decimal" />
+                    </div>
+                    <div className="space-y-1 w-24">
+                      <span className="text-xs text-slate-500 block">實際進度 (%)</span>
+                      <input className="w-full h-8 border border-slate-200 rounded-md px-1 text-sm text-center" value={actualPct} onChange={(e) => setActualPct(e.target.value)} inputMode="decimal" />
+                    </div>
+                    {(plannedPct || actualPct) ? (
+                      <span className={`h-8 flex items-center text-xs ${parseFloat(actualPct || 0) >= parseFloat(plannedPct || 0) ? "text-emerald-600" : "text-rose-600"}`}>
+                        {parseFloat(actualPct || 0) >= parseFloat(plannedPct || 0) ? "超前" : "落後"} {Math.abs(parseFloat(actualPct || 0) - parseFloat(plannedPct || 0)).toFixed(2)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden relative" title={`預定 ${plannedPct || 0}%（灰）／實際 ${actualPct || 0}%（綠）`}>
+                    <div className="bg-slate-400 h-full absolute left-0" style={{ width: `${Math.min(parseFloat(plannedPct || 0), 100)}%` }}></div>
+                    <div className="bg-brand-600 h-full absolute left-0 mix-blend-multiply" style={{ width: `${Math.min(parseFloat(actualPct || 0), 100)}%` }}></div>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">實際進度 (%)</span>
-                  <input
-                    type="text"
-                    className="w-full border border-slate-200 rounded-xl p-2 text-sm font-mono focus:ring-brand-500/20 focus:border-brand-500"
-                    value={actualPct}
-                    onChange={(e) => setActualPct(e.target.value)}
-                    inputMode="decimal"
-                  />
+                <div className="space-y-1">
+                  <span className="text-xs text-slate-500 block">工作項目可直接在下一格編輯</span>
+                  <button
+                    type="button"
+                    onClick={() => block3Ref.current && block3Ref.current.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    className="w-full h-12 bg-brand-700 hover:bg-brand-800 active:scale-[0.99] text-white text-base rounded-lg shadow-sm transition-all"
+                  >
+                    一鍵生成訊息
+                  </button>
                 </div>
               </div>
 
-              {/* 7. 進度可視化條 */}
-              {plannedPct || actualPct ? (
-                <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                    <span>進度落後/超前狀態:</span>
-                    <span className={parseFloat(actualPct) >= parseFloat(plannedPct) ? "text-emerald-600" : "text-rose-600"}>
-                      {(parseFloat(actualPct || 0) - parseFloat(plannedPct || 0)).toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden relative">
-                      <div className="bg-slate-400 h-full absolute left-0" style={{ width: `${Math.min(parseFloat(plannedPct || 0), 100)}%` }}></div>
-                      <div className="bg-brand-600 h-full absolute left-0 mix-blend-multiply" style={{ width: `${Math.min(parseFloat(actualPct || 0), 100)}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-[9px] text-slate-400">
-                      <span>預定: {plannedPct || 0}% (灰)</span>
-                      <span>實際: {actualPct || 0}% (綠)</span>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* 8. 本日工作與選填項目 */}
-              <div className="space-y-4 border-t border-slate-100 pt-4">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-slate-500 block">本日工作項目</span>
+              {/* 本日工作與選填項目 */}
+              <div className="space-y-2 border-t border-slate-100 pt-2">
+                <div className="space-y-1">
+                  <span className="text-xs text-slate-500 block">工作項目</span>
                   <textarea
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                    className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-brand-500/20"
                     rows={3}
                     value={workItems}
                     onChange={(e) => setWorkItems(e.target.value)}
                   />
                 </div>
 
-                {/* 施工取樣控制 */}
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500 block">施工取樣會驗 (選填)</span>
-                    <button
-                      type="button"
-                      className="text-xs text-brand-700 font-bold hover:underline"
-                      onClick={() => setSamplingFound(!samplingFound)}
-                    >
+                    <span className="text-xs text-slate-500">施工取樣會驗 (選填)</span>
+                    <button type="button" className="text-xs text-brand-700 hover:underline" onClick={() => setSamplingFound(!samplingFound)}>
                       {samplingFound ? "✕ 隱藏此項" : "＋ 開啟此項"}
                     </button>
                   </div>
                   {samplingFound && (
                     <textarea
-                      className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-brand-500/20"
                       rows={2}
                       value={sampling}
                       onChange={(e) => setSampling(e.target.value)}
@@ -1227,21 +1320,16 @@ function App() {
                   )}
                 </div>
 
-                {/* 重要記事控制 */}
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500 block">重要記事 (選填)</span>
-                    <button
-                      type="button"
-                      className="text-xs text-brand-700 font-bold hover:underline"
-                      onClick={() => setImportantFound(!importantFound)}
-                    >
+                    <span className="text-xs text-slate-500">重要記事 (選填)</span>
+                    <button type="button" className="text-xs text-brand-700 hover:underline" onClick={() => setImportantFound(!importantFound)}>
                       {importantFound ? "✕ 隱藏此項" : "＋ 開啟此項"}
                     </button>
                   </div>
                   {importantFound && (
                     <textarea
-                      className="w-full border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-brand-500/20"
+                      className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-brand-500/20"
                       rows={2}
                       value={important}
                       onChange={(e) => setImportant(e.target.value)}
@@ -1249,7 +1337,6 @@ function App() {
                     />
                   )}
                 </div>
-
               </div>
 
             </div>
@@ -1257,46 +1344,45 @@ function App() {
 
           {/* 預覽輸出卡片 */}
           {output && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-md space-y-4">
-              <label className="block text-slate-800 font-extrabold text-[15px] flex items-center gap-1.5 pb-2 border-b border-slate-100">
+            <div ref={block3Ref} className="scroll-mt-4 bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm space-y-3">
+              <span className="text-slate-800 font-medium text-[15px] flex items-center gap-1.5 pb-2 border-b border-slate-100">
                 <span className="bg-brand-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">3</span>
                 LINE 回報內容預覽
-              </label>
+              </span>
 
-              <pre className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs md:text-sm text-slate-700 font-mono whitespace-pre-wrap break-all leading-relaxed max-h-[350px] overflow-y-auto">
-                {output}
-              </pre>
+              {canCopy ? (
+                <>
+                  <pre className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs md:text-sm text-slate-700 font-mono whitespace-pre-wrap break-all leading-relaxed max-h-[350px] overflow-y-auto">
+                    {output}
+                  </pre>
 
-              <div className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => copyText(output)}
-                  className={`flex-1 font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 ${
-                    copied
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-brand-700 text-white hover:bg-brand-800 active:scale-[0.98]"
-                  }`}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    {copied
-                      ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                      : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    }
-                  </svg>
-                  <span>{copied ? "✓ 已成功複製" : "一鍵複製 LINE 回報"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveRecord}
-                  className="bg-white hover:bg-slate-50 text-brand-800 border-2 border-brand-700 font-bold py-3 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                  <span>儲存至歷史</span>
-                </button>
-              </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => copyText(output, true)}
+                      className={`flex-1 py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 ${
+                        copied ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-brand-700 text-white hover:bg-brand-800 active:scale-[0.98]"
+                      }`}
+                    >
+                      <span>{copied ? "✓ 已成功複製" : "一鍵複製 LINE 回報"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveRecord}
+                      className="bg-white hover:bg-slate-50 text-brand-800 border border-brand-700 py-3 px-4 rounded-xl text-sm transition-colors active:scale-[0.98]"
+                    >
+                      儲存至歷史
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-3 text-sm text-slate-600 space-y-1">
+                  <span className="block">🔒 區塊 2 確認無誤後才能複製回報，目前尚待處理：</span>
+                  {copyBlockers.map((b, i) => (
+                    <span key={i} className="block text-xs text-rose-700">▪ {b}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1309,12 +1395,12 @@ function App() {
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
 
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <span className="text-slate-800 font-extrabold text-[15px]">已保存的提報紀錄</span>
+              <span className="text-slate-800 font-medium text-[15px]">已保存的提報紀錄</span>
               {records.length > 0 && (
                 <button
                   type="button"
                   onClick={handleClearAllRecords}
-                  className="text-xs text-rose-600 hover:text-rose-800 font-bold border border-rose-200 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors"
+                  className="text-xs text-rose-600 hover:text-rose-800 font-medium border border-rose-200 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors"
                 >
                   🗑️ 清空所有紀錄
                 </button>
@@ -1377,10 +1463,10 @@ function App() {
 
                     <div className="flex justify-between items-start gap-4">
                       <div className="space-y-1">
-                        <span className="bg-brand-100 text-brand-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                        <span className="bg-brand-100 text-brand-800 text-[10px] font-medium px-2 py-0.5 rounded">
                           {r.date}
                         </span>
-                        <h4 className="text-sm font-extrabold text-slate-800 leading-snug">
+                        <h4 className="text-sm font-medium text-slate-800 leading-snug">
                           {r.projectName}
                         </h4>
                         <p className="text-[10px] text-slate-400">儲存時間: {r.savedAt}</p>
@@ -1390,14 +1476,14 @@ function App() {
                         <button
                           type="button"
                           onClick={() => { copyText(r.text); }}
-                          className="bg-brand-50 hover:bg-brand-100 text-brand-800 border border-brand-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                          className="bg-brand-50 hover:bg-brand-100 text-brand-800 border border-brand-200 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                         >
                           複製
                         </button>
                         <button
                           type="button"
                           onClick={() => deleteRecord(r.id)}
-                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                         >
                           刪除
                         </button>
@@ -1413,7 +1499,7 @@ function App() {
                     ) : null}
 
                     <details className="group">
-                      <summary className="text-xs text-brand-700 hover:text-brand-900 font-bold cursor-pointer list-none flex items-center gap-1">
+                      <summary className="text-xs text-brand-700 hover:text-brand-900 font-medium cursor-pointer list-none flex items-center gap-1">
                         <svg className="w-3.5 h-3.5 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
                         </svg>
@@ -1439,11 +1525,11 @@ function App() {
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4">
 
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <span className="text-slate-800 font-extrabold text-[15px]">工程資料庫管理</span>
+              <span className="text-slate-800 font-medium text-[15px]">工程資料庫管理</span>
               <button
                 type="button"
                 onClick={() => setShowAdd(true)}
-                className="bg-brand-700 hover:bg-brand-800 text-white font-bold text-xs py-2 px-3.5 rounded-lg transition-all shadow-sm flex items-center gap-1"
+                className="bg-brand-700 hover:bg-brand-800 text-white font-medium text-xs py-2 px-3.5 rounded-lg transition-all shadow-sm flex items-center gap-1"
               >
                 <span>＋ 新增自訂工程</span>
               </button>
@@ -1460,10 +1546,10 @@ function App() {
                   return (
                     <div key={idx} className="flex items-center justify-between p-3 px-4 hover:bg-slate-50 transition-colors">
                       <div className="space-y-0.5">
-                        <span className="text-sm font-semibold text-slate-700 block leading-snug">
+                        <span className="text-sm font-medium text-slate-700 block leading-snug">
                           {p}
                         </span>
-                        <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                        <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded ${
                           isDefault ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"
                         }`}>
                           {isDefault ? "系統預設" : "使用者自訂"}
@@ -1494,7 +1580,7 @@ function App() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl space-y-4">
             <div className="flex justify-between items-start">
-              <h3 className="text-base font-bold text-slate-800">新增工程到資料庫</h3>
+              <h3 className="text-base font-medium text-slate-800">新增工程到資料庫</h3>
               <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -1518,14 +1604,14 @@ function App() {
               <button
                 type="button"
                 onClick={addProject}
-                className="flex-1 bg-brand-700 hover:bg-brand-800 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-brand-700 hover:bg-brand-800 text-white font-medium py-2 px-4 rounded-xl text-xs transition-colors"
               >
                 確認新增
               </button>
               <button
                 type="button"
                 onClick={() => setShowAdd(false)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium py-2 px-4 rounded-xl text-xs transition-colors"
               >
                 取消
               </button>
@@ -1538,14 +1624,14 @@ function App() {
       {pendingRemove && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">確認移除工程項目</h3>
+            <h3 className="text-base font-medium text-slate-800">確認移除工程項目</h3>
 
             <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-xs leading-normal">
-              即將移出：<b className="font-extrabold">{pendingRemove}</b>
+              即將移出：<span>{pendingRemove}</span>
             </div>
 
             <div className="space-y-1.5">
-              <span className="text-xs text-slate-400 block font-bold">請輸入管理密碼以確認移除</span>
+              <span className="text-xs text-slate-400 block font-medium">請輸入管理密碼以確認移除</span>
               <input
                 type="password"
                 className={`w-full border rounded-xl p-2.5 text-sm text-center ${
@@ -1559,21 +1645,21 @@ function App() {
                 placeholder="安全管理碼"
                 inputMode="numeric"
               />
-              {pwError && <span className="text-[10px] text-rose-600 block font-bold">❌ 安全認證密碼不正確！</span>}
+              {pwError && <span className="text-[10px] text-rose-600 block font-medium">❌ 安全認證密碼不正確！</span>}
             </div>
 
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={confirmRemove}
-                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-medium py-2 px-4 rounded-xl text-xs transition-colors"
               >
                 認證並移除
               </button>
               <button
                 type="button"
                 onClick={() => setPendingRemove(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium py-2 px-4 rounded-xl text-xs transition-colors"
               >
                 取消
               </button>
@@ -1586,26 +1672,164 @@ function App() {
       {pendingDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">確定刪除此提報紀錄？</h3>
+            <h3 className="text-base font-medium text-slate-800">確定刪除此提報紀錄？</h3>
             <p className="text-xs text-slate-400 leading-normal">此操作將永久從本地儲存中移除此回報，且無法復原。</p>
 
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-medium py-2.5 px-4 rounded-xl text-xs transition-colors"
               >
                 確定刪除
               </button>
               <button
                 type="button"
                 onClick={() => setPendingDelete(null)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium py-2.5 px-4 rounded-xl text-xs transition-colors"
               >
                 取消
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 彈窗：補充日期與天氣 */}
+      {infoModal && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4 text-sm text-slate-700">
+            <div className="space-y-1">
+              <h3 className="text-base font-medium text-slate-800 m-0">請補充提報日期與天氣</h3>
+              <p className="text-xs text-slate-500 m-0">進度回報中未解析到以下資料，補齊後才能複製回報。</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-slate-500 block">提報日期 (民國)</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <select className={`border rounded-lg px-1.5 py-1.5 ${rocY ? "border-slate-200" : "border-rose-300"}`} value={rocY} onChange={(e) => setRocY(e.target.value)}>
+                  <option value="">年</option>
+                  {yearOpts.map(y => <option key={y} value={y}>{y} 年</option>)}
+                </select>
+                <select className={`border rounded-lg px-1.5 py-1.5 ${rocM ? "border-slate-200" : "border-rose-300"}`} value={rocM} onChange={(e) => setRocM(e.target.value)}>
+                  <option value="">月</option>
+                  {monthOpts.map(m => <option key={m} value={m}>{m} 月</option>)}
+                </select>
+                <select className={`border rounded-lg px-1.5 py-1.5 ${rocD ? "border-slate-200" : "border-rose-300"}`} value={rocD} onChange={(e) => setRocD(e.target.value)}>
+                  <option value="">日</option>
+                  {dayOpts.map(d => <option key={d} value={d}>{d} 日</option>)}
+                </select>
+                {wd && <span className="text-brand-700">週{wd}</span>}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-slate-500 block">天氣</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-slate-500">上午</span>
+                <select className={`border rounded-lg px-1.5 py-1.5 ${weatherAm ? "border-slate-200" : "border-rose-300"}`} value={weatherAm} onChange={(e) => setWeatherAm(e.target.value)}>
+                  <option value="">請選擇</option>
+                  {[...new Set([...WEATHER_OPTIONS, weatherAm].filter(Boolean))].map(w => <option key={w} value={w}>{w}</option>)}
+                </select>
+                <span className="text-xs text-slate-500 ml-1">下午</span>
+                <select className={`border rounded-lg px-1.5 py-1.5 ${weatherPm ? "border-slate-200" : "border-rose-300"}`} value={weatherPm} onChange={(e) => setWeatherPm(e.target.value)}>
+                  <option value="">請選擇</option>
+                  {[...new Set([...WEATHER_OPTIONS, weatherPm].filter(Boolean))].map(w => <option key={w} value={w}>{w}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                disabled={!(rocY && rocM && rocD && weatherAm && weatherPm)}
+                onClick={() => setInfoModal(false)}
+                className="flex-1 bg-brand-700 hover:bg-brand-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-2 px-4 rounded-xl text-sm transition-colors"
+              >
+                確認
+              </button>
+              <button
+                type="button"
+                onClick={() => setInfoModal(false)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 px-4 rounded-xl text-sm transition-colors"
+              >
+                稍後再補
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 彈窗：複製後提醒儲存 */}
+      {saveModal && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl space-y-4 text-sm text-slate-700">
+            <div className="space-y-1">
+              <h3 className="text-base font-medium text-slate-800 m-0">已複製回報，要存到歷史紀錄嗎？</h3>
+              <p className="text-xs text-slate-500 m-0">存檔後可在「歷史紀錄」查看此工程的進度走勢。</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { handleSaveRecord(true); setSaveModal(false); }}
+                className="flex-1 bg-brand-700 hover:bg-brand-800 text-white py-2 px-4 rounded-xl text-sm transition-colors"
+              >
+                儲存
+              </button>
+              <button
+                type="button"
+                onClick={() => setSaveModal(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 px-4 rounded-xl text-sm transition-colors"
+              >
+                不用
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 回到頂端 */}
+      <div className="pt-6 pb-16 text-center">
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="bg-white hover:bg-slate-50 text-brand-800 border border-slate-200 font-medium py-2 px-5 rounded-full text-sm shadow-sm"
+        >
+          ↑ 回到頂端
+        </button>
+      </div>
+
+      {/* 窄螢幕時指引卡貼底，預留空間讓最後的內容可捲到卡片上方 */}
+      {showGuide && !guideInGutter && !bubblePos && <div className="h-32" aria-hidden="true"></div>}
+
+      {/* 操作指引卡（可拖曳） */}
+      {showGuide && (
+        <div
+          ref={bubbleRef}
+          onPointerDown={onBubbleDown}
+          onPointerMove={onBubbleMove}
+          onPointerUp={onBubbleUp}
+          onPointerCancel={onBubbleUp}
+          style={bubblePos ? { left: bubblePos.x, top: bubblePos.y, width: bubblePos.w } : guideDefaultStyle}
+          className={`guide guide-${hint.tone} fixed z-40 cursor-grab active:cursor-grabbing select-none touch-none`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2">
+            <span className="guide-step">{hint.tone === "done" ? "全部完成" : `第 ${hint.step} 步（共 4 步）`}</span>
+            <span className="guide-label">{GUIDE_STEPS[hint.step - 1]}</span>
+            <button
+              type="button"
+              onClick={() => setHintClosed(hintKey)}
+              className="guide-close ml-auto"
+              aria-label="關閉指引"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="guide-rail" aria-hidden="true">
+            {GUIDE_STEPS.map((_, i) => (
+              <span key={i} className={i < hint.step - 1 || hint.tone === "done" ? "is-done" : i === hint.step - 1 ? "is-now" : ""}></span>
+            ))}
+          </div>
+          <p key={hintKey} className="guide-text">{hint.text}</p>
         </div>
       )}
 
@@ -1621,7 +1845,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 <script>
   setTimeout(function() {
     var root = document.getElementById('root');
-    if (root && root.innerText.indexOf('監造日報助手載入中') !== -1) {
+    if (root && root.innerText.indexOf('監造每週提報助手載入中') !== -1) {
       var missing = [];
       if (!window.React) missing.push('React');
       if (!window.ReactDOM) missing.push('ReactDOM');
